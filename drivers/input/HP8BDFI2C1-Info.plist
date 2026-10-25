@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleIdentifier</key>
+	<string>local.hp8bdf.I2C1TouchscreenController</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>HP8BDFI2C1</string>
+	<key>CFBundlePackageType</key>
+	<string>KEXT</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+	<key>IOKitPersonalities</key>
+	<dict>
+		<key>HP8BDFRaptorLakeTouchscreenController</key>
+		<dict>
+			<key>CFBundleIdentifier</key>
+			<string>com.alexandred.VoodooI2C</string>
+			<key>I2CClkRate</key>
+			<integer>133000000</integer>
+			<key>I2CSclFallingTimeNs</key>
+			<integer>208</integer>
+			<key>I2CSdaFallingTimeNs</key>
+			<integer>171</integer>
+			<key>I2CSdaHoldTimeNs</key>
+			<integer>42</integer>
+			<key>IOClass</key>
+			<string>VoodooI2CPCIController</string>
+			<key>IOPCIPrimaryMatch</key>
+			<string>0x51e98086</string>
+			<key>IOPCISecondaryMatch</key>
+			<string>0x8bdf103c</string>
+			<key>IOProbeScore</key>
+			<integer>9999</integer>
+			<key>IOProviderClass</key>
+			<string>IOPCIDevice</string>
+		</dict>
+	</dict>
+	<key>OSBundleLibraries</key>
+	<dict>
+		<key>com.alexandred.VoodooI2C</key>
+		<string>2.9.1</string>
+	</dict>
+	<key>OSBundleRequired</key>
+	<string>Root</string>
+</dict>
+</plist>

@@ -1,0 +1,253 @@
+{
+  "version": 1,
+  "driver_version": "0.1.4",
+  "capacity": 64,
+  "word_bytes": 4,
+  "record_bytes": 24,
+  "byte_order": "little",
+  "record_words": [
+    "sequence",
+    "kind",
+    "a",
+    "b",
+    "c",
+    "d"
+  ],
+  "properties": {
+    "version": "hp-wifi-diag-trace-version",
+    "count": "hp-wifi-diag-trace-count",
+    "dropped": "hp-wifi-diag-trace-dropped",
+    "incomplete": "hp-wifi-diag-trace-incomplete",
+    "captured": "hp-wifi-diag-trace-captured",
+    "data": "hp-wifi-diag-trace-data"
+  },
+  "events": {
+    "1": {
+      "name": "CommandStart",
+      "fields": [
+        "id",
+        "index",
+        "host_flags",
+        "queued"
+      ]
+    },
+    "2": {
+      "name": "CommandSubmit",
+      "fields": [
+        "id",
+        "index",
+        "tx_flags",
+        "queued"
+      ]
+    },
+    "3": {
+      "name": "CommandDescriptor",
+      "fields": [
+        "index",
+        "total_length",
+        "num_tbs",
+        "next_write_index"
+      ]
+    },
+    "4": {
+      "name": "CommandDoorbell",
+      "fields": [
+        "id",
+        "index",
+        "next_write_index",
+        "queued"
+      ]
+    },
+    "5": {
+      "name": "WaitEnter",
+      "fields": [
+        "id",
+        "index",
+        "tx_flags",
+        "queued"
+      ]
+    },
+    "6": {
+      "name": "WaitReturn",
+      "fields": [
+        "id",
+        "index",
+        "thread_result",
+        "reserved_zero"
+      ]
+    },
+    "7": {
+      "name": "CommandReturn",
+      "fields": [
+        "id",
+        "index",
+        "errno",
+        "tx_flags"
+      ]
+    },
+    "8": {
+      "name": "CommandAbort",
+      "fields": [
+        "id",
+        "index",
+        "errno",
+        "reason_1_epoch_2_generation"
+      ]
+    },
+    "9": {
+      "name": "CompletionSeen",
+      "fields": [
+        "code",
+        "qid",
+        "index",
+        "queued"
+      ]
+    },
+    "10": {
+      "name": "CompletionPending",
+      "fields": [
+        "code",
+        "index",
+        "tx_flags",
+        "queued"
+      ]
+    },
+    "11": {
+      "name": "CompletionDone",
+      "fields": [
+        "code",
+        "index",
+        "tx_flags",
+        "queued"
+      ]
+    },
+    "12": {
+      "name": "IRQ_ICT",
+      "fields": [
+        "r1",
+        "r2",
+        "mask",
+        "ict_index"
+      ]
+    },
+    "13": {
+      "name": "IRQ_CSR",
+      "fields": [
+        "r1",
+        "r2",
+        "mask",
+        "driver_flags"
+      ]
+    },
+    "14": {
+      "name": "IRQ_ICT_EMPTY",
+      "fields": [
+        "zero_r1",
+        "zero_r2",
+        "mask",
+        "ict_index"
+      ]
+    },
+    "15": {
+      "name": "IRQ_CSR_UNAVAILABLE",
+      "fields": [
+        "r1",
+        "zero_r2",
+        "mask",
+        "driver_flags"
+      ]
+    },
+    "16": {
+      "name": "IRQ_MSIX_RAW",
+      "fields": [
+        "fh_causes",
+        "hw_causes",
+        "fh_mask",
+        "hw_mask"
+      ]
+    },
+    "17": {
+      "name": "RxBatch",
+      "fields": [
+        "hw_index",
+        "current_index",
+        "reserved_zero_0",
+        "reserved_zero_1"
+      ]
+    },
+    "18": {
+      "name": "RxHeader",
+      "fields": [
+        "code",
+        "qid_high16_index_low16",
+        "length",
+        "handled"
+      ]
+    },
+    "19": {
+      "name": "RxBadHeader",
+      "fields": [
+        "code",
+        "qid_high16_index_low16",
+        "length_0_if_unvalidated",
+        "reason_1_invalid_2_length"
+      ]
+    },
+    "20": {
+      "name": "RxEnd",
+      "fields": [
+        "hw_index",
+        "current_index",
+        "reserved_zero_0",
+        "reserved_zero_1"
+      ]
+    },
+    "21": {
+      "name": "LmacError",
+      "fields": [
+        "valid",
+        "error_id",
+        "reserved_zero_0",
+        "reserved_zero_1"
+      ]
+    },
+    "22": {
+      "name": "UmacError",
+      "fields": [
+        "valid",
+        "error_id",
+        "reserved_zero_0",
+        "reserved_zero_1"
+      ]
+    },
+    "23": {
+      "name": "IRQExit",
+      "fields": [
+        "return_value",
+        "handled",
+        "driver_flags",
+        "reserved_zero"
+      ]
+    },
+    "24": {
+      "name": "RxDmaReadFailure",
+      "fields": [
+        "current_index",
+        "reserved_zero_0",
+        "reserved_zero_1",
+        "reserved_zero_2"
+      ]
+    }
+  },
+  "semantics": [
+    "Sequence is bounded reservation index 0..63, exported in strictly increasing order; incomplete slots are omitted, so gaps are allowed.",
+    "Only fully written records with acquire-observed ready markers are exported. Capture marker is published last and only if every registry write succeeds.",
+    "Fixed 64-slot storage; no pointers, packet contents, addresses, network identifiers, strings, allocations, logging or registry access in trace append.",
+    "IRQ causes and masks reuse CPU local/state values, with no additional hardware reads. ICT-empty and invalid-CSR events use literal zero for unread cause registers.",
+    "Command send/wait/return records cover only the first two admitted synchronous startup commands. Other event kinds cover the bounded startup context until snapshot.",
+    "First failure or startup cleanup/success freezes and snapshots trace in safe startup context. Snapshot is sticky across retries; already-in-flight producers may be omitted and counted incomplete if their reserved slot was visible.",
+    "dropped counts append attempts rejected by capacity, saturating at UINT32_MAX; incomplete counts visible reserved slots not ready at snapshot. Late producer reservation may fall after the snapshot cutoff.",
+    "Registry publication failure leaves captured absent; no partial publication is claimed complete.",
+    "errno/thread_result are uint32 representations; no runtime Wi-Fi success claim."
+  ]
+}

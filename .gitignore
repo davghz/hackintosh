@@ -1,0 +1,22 @@
+# Local material contains credentials and firmware records. NEVER force-add it.
+/private/
+/deps/
+.DS_Store
+__pycache__/
+*.pyc
+**/build/
+**/build-v*/
+*.o
+*.so
+*.efi
+*.kc
+*.dmg
+*.img
+*.fd
+*.efivar
+**/expected.h
+**/installation.json
+**/vm-test/
+**/vm-test-result.json
+**/build-manifest.json
+**/source-lock.json

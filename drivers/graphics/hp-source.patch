@@ -1,0 +1,1029 @@
+diff --git a/src/NootedGreen/kern_gen11.cpp b/src/NootedGreen/kern_gen11.cpp
+index 6b26f0c..1e3c5d6 100755
+--- a/src/NootedGreen/kern_gen11.cpp
++++ b/src/NootedGreen/kern_gen11.cpp
+@@ -1,6 +1,17 @@
+ //  Copyright © 2026 Stezza @ inc. Licensed under the Thou Shalt Not Profit License version 1.0. See LICENSE for
+ //  details.
+ #include "kern_gen11.hpp"
++#include "kern_hp8bdf.hpp"
++#include "kern_hp_dvmt.hpp"
++#include "kern_hp_cursor.hpp"
++#include "kern_hp_sync.hpp"
++#include "kern_hp_sync_signatures.hpp"
++#include "kern_hp_fence.hpp"
++#include "kern_hp_fence_signatures.hpp"
++#include "kern_hp_nvram.hpp"
++#include "kern_hp_linear.hpp"
++#include "kern_hp_linear_signatures.hpp"
++#include <machine/machine_routines.h>
+ static bool xeFixEnabled();  // xe/xefix, definido junto do FastWriteRegister32
+ #include "AppleIntelParams.hpp"
+ #include <Headers/kern_api.hpp>
+@@ -95,6 +106,163 @@ static volatile uint32_t gFbModeArgSeen = 0;
+ static volatile uint32_t gTglFbBlockRuns = 0, gTglFbRoutesDone = 0, gIcLFbBlockRuns = 0;
+ static volatile uint64_t gOrgGcdm = 0, gOrgGpi = 0, gOrgVdm = 0;
+ 
++// No logging, allocation, waiting or direct register writes in the cursor write
++// filter: the framebuffer may call it while holding a hardware spin lock.
++static volatile SInt32 gHpCursorSeen = 0, gHpCursorChanged = 0;
++static volatile UInt32 gHpCursorInput = 0, gHpCursorOutput = 0, gHpCursorArb = 0;
++static thread_call_t gHpCursorTimer = nullptr;
++static unsigned gHpCursorSamples = 0;
++static mach_vm_address_t gHpSyncCaller = 0, gHpSyncTestEvent = 0, gHpSyncStorage = 0;
++static bool gHpSyncIOAF = false;
++static volatile SInt32 gHpSyncAttempts = 0, gHpSyncCompleted = 0, gHpSyncWaited = 0;
++static volatile SInt32 gHpSyncRefused = 0, gHpSyncTimeouts = 0, gHpSyncStopped = 0;
++static volatile UInt32 gHpSyncLastChannels = 0, gHpSyncLastIndex = 0, gHpSyncLastReason = 0, gHpSyncMaxWaitMs = 0;
++
++// 1.0.10: route the native fence initializer, preserving its force-wake and
++// register ordering. Never toggle a live fence around concurrent CPU writes.
++static mach_vm_address_t gHpFenceOriginal = 0, gHpFenceMemoryOriginal = 0;
++static bool gHpFenceQualified = false, gHpFenceMemoryQualified = false;
++static bool gHpNvramQualified = false, gHpNvramPatched = false;
++static mach_vm_address_t gHpLinearImageOriginal=0, gHpLinearStateOriginal=0;
++static mach_vm_address_t gHpLinearGetter=0, gHpLinearVtable=0, gHpLinearCommitCaller=0;
++static bool gHpLinearQualified=false;
++static void *volatile gHpLinearController=nullptr, *volatile gHpLinearBuffer=nullptr;
++static volatile SInt32 gHpLinearCalls=0, gHpLinearRedirected=0, gHpLinearFlushed=0, gHpLinearRefused=0;
++static volatile UInt32 gHpLinearReason=0, gHpLinearWidth=0, gHpLinearPages=0;
++static volatile uint64_t gHpLinearOffset=0;
++static IOReturn hpLinearImage(void *, void *, void *);
++static IOReturn hpLinearState(void *, void *, int, int, bool, bool);
++static void *volatile gHpFenceController = nullptr;
++static volatile SInt32 gHpFenceCalls = 0, gHpFenceMatched = 0, gHpFenceApplied = 0;
++static volatile SInt32 gHpFenceRefused = 0, gHpFenceNativeFailed = 0;
++static volatile uint64_t gHpFenceStart = 0, gHpFenceSize = 0, gHpFenceOutputSize = 0;
++static volatile uint64_t gHpFencePitch = 0, gHpFenceCursorStart = 0, gHpFenceDsbStart = 0;
++static volatile uint32_t gHpFenceTile = 0, gHpFenceReserved = 0, gHpFenceCursorBytes = 0;
++static void hpFenceMemoryInit(void *controller);
++static bool hpFenceInit(void *fence, void *allocator, uint64_t index,
++                        const HPFence::Range *range, uint64_t pitch, uint32_t tile);
++
++void hpSyncResolveIOAF(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
++    gHpSyncTestEvent = patcher.solveSymbol(index, "__ZN24IOAccelEventMachineFast29testEventEP12IOAccelEvent", address, size);
++    if (!gHpSyncTestEvent) patcher.clearError();
++    gHpSyncStorage = patcher.solveSymbol(index, "__ZN16IOAccelResource218getStorageResourceEv", address, size);
++    if (!gHpSyncStorage) patcher.clearError();
++    gHpSyncIOAF = HPSyncSignatures::match(gHpSyncTestEvent, address, size, HPSyncSignatures::TestEvent) &&
++        HPSyncSignatures::match(gHpSyncStorage, address, size, HPSyncSignatures::StorageResource);
++    SYSLOG("ngreen", "HP-SYNC IOAF exact helper signatures: %s", gHpSyncIOAF ? "matched" : "rejected");
++}
++
++static uint32_t hpCursorFilter(unsigned long reg, uint32_t value) {
++    auto *ng = NGreen::callback;
++    if (reg != HPCursor::ControlA || !ng || !ng->hpProfileVerified ||
++        ng->mmioLength() < 0x70184 || !gHpCursorTimer)
++        return value;
++    const uint32_t arb = ng->readReg32(HPCursor::ArbControlA);
++    // 1.0.9: Display 13 cursor slots; HP 1.0.8 captured ARB=0x2a0f and CURCTL=0x27.
++    // Preserve the passing synchronization correction and every unrelated register bit.
++    const uint32_t output = HPCursor::filter(true, reg, value, arb);
++    // Saturating diagnostic counters; not used for hardware decisions.
++    if (gHpCursorSeen < 1000000) OSIncrementAtomic(&gHpCursorSeen);
++    if (output != value && gHpCursorChanged < 1000000) OSIncrementAtomic(&gHpCursorChanged);
++    gHpCursorInput = value;
++    gHpCursorOutput = output;
++    gHpCursorArb = arb;
++    return output;
++}
++
++static void hpCursorSnapshot(thread_call_param_t, thread_call_param_t) {
++    auto *ng = NGreen::callback;
++    if (!ng || !ng->hpProfileVerified || ng->mmioLength() < 0x70184) return;
++    auto *root = IORegistryEntry::getRegistryRoot();
++    const bool captureCursor = gHpCursorSamples < 8;
++    const uint32_t pipe = captureCursor ? ng->readReg32(0x70008) : 0;
++    const uint32_t arb = captureCursor ? ng->readReg32(HPCursor::ArbControlA) : 0;
++    const uint32_t control = captureCursor ? ng->readReg32(HPCursor::ControlA) : 0;
++    const uint32_t base = captureCursor ? ng->readReg32(0x70084) : 0;
++    const uint32_t plane = captureCursor ? ng->readReg32(0x70180) : 0;
++    ++gHpCursorSamples;
++    if (root) {
++        if (captureCursor) {
++        root->setProperty("hp-cursor-policy", "display13-one-slot-if-enabled");
++        root->setProperty("hp-cursor-samples", gHpCursorSamples, 32);
++        root->setProperty("hp-cursor-writes-seen", static_cast<uint32_t>(gHpCursorSeen), 32);
++        root->setProperty("hp-cursor-writes-adjusted", static_cast<uint32_t>(gHpCursorChanged), 32);
++        root->setProperty("hp-cursor-last-input", gHpCursorInput, 32);
++        root->setProperty("hp-cursor-last-output", gHpCursorOutput, 32);
++        root->setProperty("hp-cursor-arbitration-at-write", gHpCursorArb, 32);
++        root->setProperty("hp-cursor-pipe", pipe, 32);
++        root->setProperty("hp-cursor-arbitration", arb, 32);
++        root->setProperty("hp-cursor-control", control, 32);
++        root->setProperty("hp-cursor-base", base, 32);
++        root->setProperty("hp-cursor-primary-control", plane, 32);
++        }
++        root->setProperty("hp-sync-qualified", gHpSyncIOAF && gHpSyncCaller != 0);
++        root->setProperty("hp-sync-attempts", static_cast<uint32_t>(gHpSyncAttempts), 32);
++        root->setProperty("hp-sync-completed", static_cast<uint32_t>(gHpSyncCompleted), 32);
++        root->setProperty("hp-sync-waited", static_cast<uint32_t>(gHpSyncWaited), 32);
++        root->setProperty("hp-sync-refused", static_cast<uint32_t>(gHpSyncRefused), 32);
++        root->setProperty("hp-sync-timeouts", static_cast<uint32_t>(gHpSyncTimeouts), 32);
++        root->setProperty("hp-sync-stopped", static_cast<uint32_t>(gHpSyncStopped), 32);
++        root->setProperty("hp-sync-last-channels", gHpSyncLastChannels, 32);
++        root->setProperty("hp-sync-last-index", gHpSyncLastIndex, 32);
++        root->setProperty("hp-sync-last-reason", gHpSyncLastReason, 32);
++        root->setProperty("hp-sync-max-wait-ms", gHpSyncMaxWaitMs, 32);
++        root->setProperty("hp-fence-policy", "bound-boot-x-fence-before-linear-cursor");
++        root->setProperty("hp-fence-qualified", gHpFenceQualified && gHpFenceMemoryQualified);
++        root->setProperty("hp-fence-calls", static_cast<uint32_t>(gHpFenceCalls), 32);
++        root->setProperty("hp-fence-matched", static_cast<uint32_t>(gHpFenceMatched), 32);
++        root->setProperty("hp-fence-applied", static_cast<uint32_t>(gHpFenceApplied), 32);
++        root->setProperty("hp-fence-refused", static_cast<uint32_t>(gHpFenceRefused), 32);
++        root->setProperty("hp-fence-native-failed", static_cast<uint32_t>(gHpFenceNativeFailed), 32);
++        root->setProperty("hp-fence-input-start", gHpFenceStart, 64);
++        root->setProperty("hp-fence-input-size", gHpFenceSize, 64);
++        root->setProperty("hp-fence-output-size", gHpFenceOutputSize, 64);
++        root->setProperty("hp-fence-pitch", gHpFencePitch, 64);
++        root->setProperty("hp-fence-tile", gHpFenceTile, 32);
++        root->setProperty("hp-fence-reserved", gHpFenceReserved, 32);
++        root->setProperty("hp-fence-cursor-start", gHpFenceCursorStart, 64);
++        root->setProperty("hp-fence-cursor-bytes", gHpFenceCursorBytes, 32);
++        root->setProperty("hp-fence-dsb-start", gHpFenceDsbStart, 64);
++        if (ng->mmioLength() >= 0x100008) {
++            root->setProperty("hp-fence-live-low", ng->readReg32(0x100000), 32);
++            root->setProperty("hp-fence-live-high", ng->readReg32(0x100004), 32);
++        }
++        root->setProperty("hp-fence-samples", gHpCursorSamples, 32);
++        root->setProperty("hp-nvram-abi-qualified", gHpNvramQualified);
++        root->setProperty("hp-nvram-abi-patched", gHpNvramPatched);
++        root->setProperty("hp-nvram-save-slot", gHpNvramPatched ? 0x9e8U : 0x9f8U, 32);
++        root->setProperty("hp-linear-qualified", gHpLinearQualified);
++        root->setProperty("hp-linear-calls", static_cast<uint32_t>(gHpLinearCalls), 32);
++        root->setProperty("hp-linear-redirected", static_cast<uint32_t>(gHpLinearRedirected), 32);
++        root->setProperty("hp-linear-flushed", static_cast<uint32_t>(gHpLinearFlushed), 32);
++        root->setProperty("hp-linear-refused", static_cast<uint32_t>(gHpLinearRefused), 32);
++        root->setProperty("hp-linear-last-reason", gHpLinearReason, 32);
++        root->setProperty("hp-linear-width", gHpLinearWidth, 32);
++        root->setProperty("hp-linear-mapped-pages", gHpLinearPages, 32);
++        root->setProperty("hp-linear-image-offset", gHpLinearOffset, 64);
++    }
++    if (captureCursor) SYSLOG("ngreen", "HP-CURSOR sample=%u seen=%u adjusted=%u input=%08x output=%08x pipe=%08x arb=%08x control=%08x base=%08x plane=%08x",
++        gHpCursorSamples, static_cast<uint32_t>(gHpCursorSeen), static_cast<uint32_t>(gHpCursorChanged),
++        gHpCursorInput, gHpCursorOutput, pipe, arb, control, base, plane);
++    if (gHpCursorSamples < 120 && gHpCursorTimer) {
++        uint64_t deadline;
++        clock_interval_to_deadline(15000, kMillisecondScale, &deadline);
++        thread_call_enter_delayed(gHpCursorTimer, deadline);
++    }
++}
++
++static void hpCursorStartCapture() {
++    if (gHpCursorTimer) return;
++    gHpCursorTimer = thread_call_allocate(hpCursorSnapshot, nullptr);
++    if (gHpCursorTimer) {
++        uint64_t deadline;
++        clock_interval_to_deadline(15000, kMillisecondScale, &deadline);
++        thread_call_enter_delayed(gHpCursorTimer, deadline);
++    } else {
++        SYSLOG("ngreen", "HP-CURSOR capture unavailable; cursor adjustment disabled");
++    }
++}
++
+ void Gen11::init() {
+ 	callback = this;
+ 
+@@ -1039,6 +1207,7 @@ static void fbTimingsWorker(thread_call_param_t, thread_call_param_t) {
+ }
+ 
+ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
++    if (!NGreen::callback || !NGreen::callback->hpProfileVerified) return false;
+ 	if (kextG11FB.loadIndex == index) {
+ 		gIcLFbBlockRuns++;
+ 		if (this->tglFBLoaded) {
+@@ -1191,6 +1360,103 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t
+ 		auto *activeKext = (kextG11FBTA.loadIndex == index) ? &kextG11FBTA : &kextG11FBT;
+ 		NGreen::callback->setRMMIOIfNecessary();
+ 		SYSLOG("ngreen", "init AppleIntelTGLGraphicsFramebuffer");
++
++        // The existing DVMT patch lives in the ICL-only Genx path. TGL still used
++        // (GGC << 17) & 0xfe000000: 0xfec1 becomes 4032 MiB, not this HP's 60 MiB.
++        // Match the exact donor instructions before any framebuffer initialization.
++        const auto memInit = patcher.solveSymbol(index,
++            "__ZN24AppleIntelBaseController13FBMemMgr_InitEv", address, size);
++        size_t dvmtOffset = 0;
++        uint8_t dvmtReplacement[HPDvmt::PatchSize] = {};
++        const bool inBounds = memInit >= address && memInit - address <= size &&
++            HPDvmt::Window <= size - (memInit - address);
++        PANIC_COND(!inBounds || !HPDvmt::prepare(
++            reinterpret_cast<const uint8_t *>(memInit), HPDvmt::Window,
++            NGreen::callback->stolen_size, dvmtOffset, dvmtReplacement),
++            "ngreen", "HP-DVMT refused: unqualified TGL instructions or reservation");
++        PANIC_COND(MachInfo::setKernelWriting(true, KernelPatcher::kernelWriteLock) != KERN_SUCCESS,
++            "ngreen", "HP-DVMT refused: cannot enable kernel writing");
++        lilu_os_memcpy(reinterpret_cast<void *>(memInit + dvmtOffset),
++            dvmtReplacement, sizeof(dvmtReplacement));
++        MachInfo::setKernelWriting(false, KernelPatcher::kernelWriteLock);
++        PANIC_COND(memcmp(reinterpret_cast<const void *>(memInit + dvmtOffset),
++            dvmtReplacement, sizeof(dvmtReplacement)), "ngreen", "HP-DVMT readback failed");
++        NGreen::callback->iGPU->setProperty("hp-tgl-dvmt-bytes",
++            NGreen::callback->stolen_size, 32);
++        SYSLOG("ngreen", "HP-DVMT applied: TGL FBMemMgr_Init now uses %u MiB; readback verified",
++            NGreen::callback->stolen_size / HP8BDF::MiB);
++
++        // These regions exclude the existing DVMT edit. Capture the controller
++        // only after the original initializer has established the reservation.
++        if (HPSyncSignatures::match(memInit, address, size, HPFenceSignatures::MemoryEntry) &&
++            HPSyncSignatures::match(memInit + HPFenceSignatures::CursorOffset, address, size, HPFenceSignatures::CursorLayout) &&
++            HPSyncSignatures::match(memInit + HPFenceSignatures::DsbOffset, address, size, HPFenceSignatures::DsbLayout)) {
++            RouteRequestPlus memoryRoute[] = {
++                {HPFenceSignatures::MemorySymbol, hpFenceMemoryInit, gHpFenceMemoryOriginal}
++            };
++            gHpFenceMemoryQualified = RouteRequestPlus::routeAll(patcher, index, memoryRoute, address, size);
++            if (!gHpFenceMemoryQualified) patcher.clearError();
++        }
++        SYSLOG("ngreen", "HP-FENCE cursor memory layout: %s", gHpFenceMemoryQualified ? "qualified" : "rejected; no fence correction");
++
++        // 1.0.12: the existing boot fence never went through IGFence::init.
++        // Use the already-owned cursor RAM, qualified page-for-page against
++        // its GGTT mapping, and flush before the native image commit call.
++        {
++            const auto image = patcher.solveSymbol(index, HPLinearSignatures::ImageSymbol, address, size);
++            if (!image) patcher.clearError();
++            const auto state = patcher.solveSymbol(index, HPLinearSignatures::StateSymbol, address, size);
++            if (!state) patcher.clearError();
++            gHpLinearGetter = patcher.solveSymbol(KernelPatcher::KernelID, HPLinearSignatures::GetterSymbol);
++            if (!gHpLinearGetter) patcher.clearError();
++            gHpLinearVtable = patcher.solveSymbol(KernelPatcher::KernelID, HPLinearSignatures::VtableSymbol);
++            if (!gHpLinearVtable) patcher.clearError();
++            uint32_t a,b,c,d;
++            asm volatile("cpuid" : "=a"(a),"=b"(b),"=c"(c),"=d"(d) : "a"(1),"c"(0));
++            if (HPLinear::cpu(b,d) && gHpLinearVtable && HPSync::range(gHpLinearVtable,16) &&
++                HPSync::range(gHpLinearGetter,sizeof(HPLinearSignatures::Getter)) &&
++                !memcmp(reinterpret_cast<const void *>(gHpLinearGetter), HPLinearSignatures::Getter, sizeof(HPLinearSignatures::Getter)) &&
++                HPSyncSignatures::match(image,address,size,HPLinearSignatures::Image) &&
++                HPSyncSignatures::match(state,address,size,HPLinearSignatures::State)) {
++                RouteRequestPlus linearRoutes[] = {
++                    {HPLinearSignatures::ImageSymbol,hpLinearImage,gHpLinearImageOriginal},
++                    {HPLinearSignatures::StateSymbol,hpLinearState,gHpLinearStateOriginal}
++                };
++                gHpLinearQualified=RouteRequestPlus::routeAll(patcher,index,linearRoutes,address,size);
++                if (!gHpLinearQualified) patcher.clearError();
++                else gHpLinearCommitCaller=image+HPLinearSignatures::CommitReturnOffset;
++            }
++            SYSLOG("ngreen","HP-LINEAR native cursor RAM route: %s",gHpLinearQualified ? "qualified" : "rejected; original path retained");
++        }
++
++        // 1.0.11: the 1.0.9 display-doze panic reached reserved slot 0x9f8
++        // from hwSaveNVRAM. The exact current kernel's writeNVRAMProperty is
++        // at 0x9e8. Preserve native arguments, return value and object cleanup.
++        {
++            const auto save = patcher.solveSymbol(index, HPNvram::SaveSymbol, address, size);
++            if (!save) patcher.clearError();
++            const auto vt = patcher.solveSymbol(KernelPatcher::KernelID, HPNvram::VtableSymbol);
++            if (!vt) patcher.clearError();
++            const auto writer = patcher.solveSymbol(KernelPatcher::KernelID, HPNvram::WriteSymbol);
++            if (!writer) patcher.clearError();
++            const auto reserved = patcher.solveSymbol(KernelPatcher::KernelID, HPNvram::ReservedSymbol);
++            if (!reserved) patcher.clearError();
++            const bool slots = vt && writer && reserved && HPSync::range(vt, 0xa10) &&
++                HPSync::range(writer, sizeof(HPNvram::WriteEntry)) &&
++                *reinterpret_cast<const mach_vm_address_t *>(vt + 16 + 0x9e8) == writer &&
++                *reinterpret_cast<const mach_vm_address_t *>(vt + 16 + 0x9f8) == reserved &&
++                !memcmp(reinterpret_cast<const void *>(writer), HPNvram::WriteEntry, sizeof(HPNvram::WriteEntry));
++            const bool bounds = save && save >= address && save-address <= size;
++            gHpNvramQualified = bounds && HPNvram::prepare(reinterpret_cast<const uint8_t *>(save),
++                size-(save-address), slots);
++            if (gHpNvramQualified &&
++                MachInfo::setKernelWriting(true, KernelPatcher::kernelWriteLock) == KERN_SUCCESS) {
++                *reinterpret_cast<volatile uint8_t *>(save + HPNvram::PatchOffset) = 0xe8;
++                MachInfo::setKernelWriting(false, KernelPatcher::kernelWriteLock);
++                gHpNvramPatched = *reinterpret_cast<const uint8_t *>(save + HPNvram::PatchOffset) == 0xe8;
++            }
++            SYSLOG("ngreen", "HP-NVRAM current-kernel save ABI: qualified=%u patched=%u", gHpNvramQualified, gHpNvramPatched);
++        }
+ 		
+ 		bool isprod=false;
+ 		auto prod=patcher.solveSymbol(index, "__ZN24AppleIntelBaseController5startEP9IOService", address, size);
+@@ -1336,6 +1602,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t
+ 		};
+ 		PANIC_COND(!RouteRequestPlus::routeAll(patcher, index, requests, address, size), "ngreen","Failed to route dp symbols");
+ 		gTglFbRoutesDone++;
++		hpCursorStartCapture();
+ 		if (checkKernelArgument("-ngreenfixbootmode")) {
+ 			SolveRequestPlus crtcSolve[] = {
+ 				{"__ZN24AppleIntelBaseController35hwCRTCToIODetailedTimingInformationEP21AppleIntelFramebufferP29IODetailedTimingInformationV2", gHwCrtcToTimingAddr},
+@@ -1816,6 +2083,27 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t
+ 		NGreen::callback->setRMMIOIfNecessary();
+ 		SYSLOG("ngreen", "V165: setRMMIO done, starting symbol resolve");
+ 
++        const auto hpFence = patcher.solveSymbol(index, HPFenceSignatures::InitSymbol, address, size);
++        if (!hpFence) patcher.clearError();
++        if (HPSyncSignatures::match(hpFence, address, size, HPFenceSignatures::Init)) {
++            RouteRequestPlus fenceRoute[] = {
++                {HPFenceSignatures::InitSymbol, hpFenceInit, gHpFenceOriginal}
++            };
++            gHpFenceQualified = RouteRequestPlus::routeAll(patcher, index, fenceRoute, address, size);
++            if (!gHpFenceQualified) patcher.clearError();
++        }
++        SYSLOG("ngreen", "HP-FENCE native initializer: %s", gHpFenceQualified ? "qualified" : "rejected; original behavior retained");
++
++        // Qualify the exact compute call site BEFORE routing barrierSubmission.
++        const auto hpCompute = patcher.solveSymbol(index, HPSyncSignatures::ComputeSymbol, address, size);
++        if (!hpCompute) patcher.clearError();
++        const auto hpBarrier = patcher.solveSymbol(index, HPSyncSignatures::BarrierSymbol, address, size);
++        if (!hpBarrier) patcher.clearError();
++        if (HPSyncSignatures::match(hpCompute ? hpCompute + 0x180 : 0, address, size, HPSyncSignatures::ComputeCall) &&
++            HPSyncSignatures::match(hpBarrier, address, size, HPSyncSignatures::BarrierEntry))
++            gHpSyncCaller = hpCompute + 0x185;
++        SYSLOG("ngreen", "HP-SYNC compute call site: %s", gHpSyncCaller ? "matched" : "rejected");
++
+ 		// V144: Resolve the Blit3D context params struct and the ExtendedContext initWithOptions.
+ 		// Blit3DExtendedCtxParams is a static data symbol — address passed as param_2 to initWithOptions.
+ 		// Without these, IGHardwareExtendedContextinitWithOptions is called with param_2=0
+@@ -3857,6 +4145,7 @@ static uint32_t xeBootHold(unsigned long reg, uint32_t val) {
+ 	return val;
+ }
+ static uint32_t xeFixFilterWrite(unsigned long reg, uint32_t val) {
++	val = hpCursorFilter(reg, val);
+ 	xeBootDiagRecord(reg, val);
+ 	val = xeBootHold(reg, val);
+ 	if (!xeFixEnabled()) return val;
+@@ -4715,8 +5004,11 @@ void Gen11::hwInitializeCState(AppleIntel::AppleIntelBaseController *that)
+ 		// On a different panel they replace the firmware-trained native mode (here 3840x2400, 4 lanes
+ 		// HBR3) and the panel goes black; Apple's FB then keeps them for the online boot display.
+ 		// -ngreenkeepefi: keep what UEFI/GOP programmed when transcoder A is already running.
+-		const bool keepEfiTiming = checkKernelArgument("-ngreenkeepefi") &&
+-			(NGreen::callback->readReg32(0x70008) & 0x80000000u);
++		// The reference panel register dump must never be programmed on this HP,
++		// including if Apple's driver temporarily disabled the firmware-active pipe.
++		const bool keepEfiTiming = NGreen::callback->hpProfileVerified ||
++			(checkKernelArgument("-ngreenkeepefi") &&
++			 (NGreen::callback->readReg32(0x70008) & 0x80000000u));
+ 		if (keepEfiTiming) {
+ 			SYSLOG("ngreen", "keepefi: TRANS_DDI_FUNC_CTL_A=0x%x HTOTAL=0x%x VTOTAL=0x%x PP_CONTROL=0x%x kept",
+ 				   NGreen::callback->readReg32(0x60400), NGreen::callback->readReg32(0x60000),
+@@ -5326,7 +5618,8 @@ unsigned long Gen11::start(void *that,void  *param_1)
+ 	// V52: Default depends on platform — real TGL uses GuC (3), RPL uses Host (5).
+ 	auto *service = static_cast<IOService *>(that);
+ 	{
+-		int schedType = NGreen::callback->isRealTGL ? 3 : 5;
++		// Same scheduler as the qualified reference config; keep HP boot-args short.
++		int schedType = NGreen::callback->hpProfileVerified ? 4 : (NGreen::callback->isRealTGL ? 3 : 5);
+ 		
+ 		// 1. Check boot-arg first (highest priority)
+ 		int bootArgSched = 0;
+@@ -6857,19 +7150,15 @@ void Gen11::blit3d_initialize_scratch_space(void *that)
+ // padrão 1500 = RP0 desde 20/10 noite, antes 1100; 0 desliga). Ocioso a GPU entra em RC6 de qualquer jeito, então o piso só vale com trabalho.
+ void Gen11::wrapSetGTFrequencyMMIO(void *that, uint32_t val)
+ {
+-	static int pisoMhz = -1;
+-	if (pisoMhz < 0) {
+-		pisoMhz = 1500;
+-		PE_parse_boot_argn("ngreengtfreq", &pisoMhz, sizeof(pisoMhz));
+-		if (pisoMhz > 1500) pisoMhz = 1500;
+-	}
+-	gXeGtFreqApple = val;
+-	gXeGtFreqN++;
+-	if (pisoMhz > 0) {
+-		uint32_t ratio = (val & 0xf) ? ((val >> 14) & 0x1ff) : (val >> 23);  // mesmo decode da Apple
+-		uint32_t piso = (uint32_t)pisoMhz * 3 / 50;                           // unidades de 16,67 MHz (Gen9+)
+-		if (ratio < piso) val = piso << 23;
+-	}
++    static int pisoMhz = -1;
++    if (pisoMhz < 0) {
++        pisoMhz = HP8BDF::NominalGpuMHz;
++        PE_parse_boot_argn("ngreengtfreq", &pisoMhz, sizeof(pisoMhz));
++        pisoMhz = static_cast<int>(HP8BDF::floorMHz(pisoMhz));
++    }
++    gXeGtFreqApple = val;
++    gXeGtFreqN++;
++    val = HP8BDF::limitFrequencyRequest(val, pisoMhz);
+ 	FunctionCast(wrapSetGTFrequencyMMIO, callback->oSetGTFrequencyMMIO)(that, val);
+ }
+ 
+@@ -8126,8 +8415,293 @@ uint32_t Gen11::beginCoalescedSegment(void *that) {
+ 	return FunctionCast(beginCoalescedSegment, callback->obeginCoalescedSegment)(that);
+ }
+ 
++static bool hpSyncMapped(const void *pointer, size_t bytes) {
++    const uint64_t start = reinterpret_cast<uint64_t>(pointer);
++    if (!HPSync::range(start, bytes) || !gPmapFindPhys || !gKernelPmap) return false;
++    void *map = *reinterpret_cast<void **>(gKernelPmap);
++    if (!map) return false;
++    const uint64_t last = (start + bytes - 1) & ~0xFFFULL;
++    for (uint64_t page = start & ~0xFFFULL;; page += 4096) {
++        if (!reinterpret_cast<uint32_t (*)(void *, uint64_t)>(gPmapFindPhys)(map, page)) return false;
++        if (page == last) return true;
++    }
++}
++
++template<typename T> static bool hpSyncRead(const void *object, size_t offset, T &out) {
++    const uint64_t base = reinterpret_cast<uint64_t>(object);
++    if (base > UINT64_MAX - offset) return false;
++    const void *source = reinterpret_cast<const void *>(base + offset);
++    if (!hpSyncMapped(source, sizeof(T))) return false;
++    memcpy(&out, source, sizeof(T));
++    return true;
++}
++
++static uint64_t hpSyncNowNs() {
++    uint64_t ns = 0;
++    absolutetime_to_nanoseconds(mach_absolute_time(), &ns);
++    return ns;
++}
++
++static bool hpLinearReject(uint32_t reason) {
++    if (gHpLinearRefused<1000000) OSIncrementAtomic(&gHpLinearRefused);
++    gHpLinearReason=reason;
++    return false;
++}
++
++static bool hpLinearMapping(void *buffer,uint64_t offset,size_t length) {
++    auto *ng=NGreen::callback;
++    if (!buffer || !ng || !gPmapFindPhys || !gKernelPmap || !length ||
++        (offset&4095) || (length&4095) || length>HPLinear::Bytes || offset>HPLinear::Bytes-length ||
++        ng->mmioLength()<0x800000+((HPLinear::Start+HPLinear::Bytes)>>9)) return false;
++    void *map=*reinterpret_cast<void **>(gKernelPmap);
++    if (!map || !HPLinear::ram(reinterpret_cast<uint64_t>(buffer))) return false;
++    for (size_t i=0;i<length;i+=4096) {
++        const uint64_t va=reinterpret_cast<uint64_t>(buffer)+offset+i;
++        const auto ppn=reinterpret_cast<uint32_t (*)(void *,uint64_t)>(gPmapFindPhys)(map,va);
++        const uint32_t reg=0x800000+((HPLinear::Start+offset+i)>>9);
++        const uint64_t entry=uint64_t(ng->readReg32(reg))|(uint64_t(ng->readReg32(reg+4))<<32);
++        if (!HPLinear::pte(entry,ppn)) return false;
++    }
++    gHpLinearPages=length/4096;
++    return true;
++}
++
++static bool hpLinearPrepare(void *controller) {
++    auto *ng=NGreen::callback;
++    if (!gHpLinearQualified || !ng || !ng->hpProfileVerified) return false;
++    uint32_t reserved=0,bytes=0;
++    uint64_t start=0,dsb=0;
++    void *descriptor=nullptr,*vtable=nullptr,*old=nullptr;
++    if (!hpSyncRead(controller,0xde4,reserved) || !hpSyncRead(controller,0xdc0,start) ||
++        !hpSyncRead(controller,0xdc8,bytes) || !hpSyncRead(controller,0xc50,dsb) ||
++        !hpSyncRead(controller,0xcd0,descriptor) || !hpSyncRead(controller,0xc98,old) ||
++        !HPLinear::layout(reserved,start,bytes,dsb)) return hpLinearReject(1);
++    // Exact IOBufferMemoryDescriptor; call its current-kernel getter directly,
++    // avoiding any cross-version C++ virtual-table offset assumptions.
++    if (!hpSyncMapped(descriptor,0xe8) || !hpSyncRead(descriptor,0,vtable) ||
++        reinterpret_cast<uint64_t>(vtable)!=gHpLinearVtable+16) return hpLinearReject(2);
++    void *buffer=reinterpret_cast<void *(*)(void *,uint64_t,uint64_t)>(gHpLinearGetter)(descriptor,0,bytes);
++    if (!HPLinear::ram(reinterpret_cast<uint64_t>(buffer))) return hpLinearReject(3);
++    if (old==buffer && gHpLinearController==controller && gHpLinearBuffer==buffer) return true;
++    if (!hpSyncMapped(old,1) || !hpLinearMapping(buffer,0,bytes)) return hpLinearReject(4);
++    // Only redirect the non-owning CPU cursor pointer. Preserve the allocation,
++    // aperture map object, GGTT entries, physical pages and native teardown.
++    if (!__sync_bool_compare_and_swap(reinterpret_cast<void *volatile *>(
++        static_cast<uint8_t *>(controller)+0xc98),old,buffer)) return hpLinearReject(5);
++    gHpLinearBuffer=buffer;
++    gHpLinearController=controller;
++    OSIncrementAtomic(&gHpLinearRedirected);
++    return true;
++}
++
++static IOReturn hpLinearImage(void *controller,void *fb,void *info) {
++    if (gHpLinearCalls<1000000) OSIncrementAtomic(&gHpLinearCalls);
++    hpLinearPrepare(controller);
++    return reinterpret_cast<IOReturn (*)(void *,void *,void *)>(gHpLinearImageOriginal)(controller,fb,info);
++}
++
++static IOReturn hpLinearState(void *controller,void *fb,int x,int y,bool visible,bool force) {
++    const uint64_t caller=reinterpret_cast<uint64_t>(__builtin_return_address(0));
++    if (gHpLinearQualified && caller==gHpLinearCommitCaller && gHpLinearController==controller) {
++        uint32_t pipe=0,first=0,second=0,index=0,width=0;
++        uint64_t offset=0;size_t length=0;void *buffer=nullptr;
++        const bool valid=hpSyncRead(controller,0xc98,buffer) && buffer==gHpLinearBuffer &&
++            hpSyncRead(fb,0x1dc,pipe) && hpSyncRead(fb,0x1f4,first) && hpSyncRead(fb,0x1f8,second) &&
++            hpSyncRead(fb,0x4ad8,index) && hpSyncRead(fb,0x4278,width) &&
++            HPLinear::imageRange(pipe,first,second,index,width,offset,length) &&
++            hpLinearMapping(buffer,offset,length);
++        if (!valid) { hpLinearReject(6); return kIOReturnUnsupported; }
++        // Flush only the completed cursor image, before native CURBASE/control
++        // programming. No allocation, waiting, fence disable, or MMIO writes.
++        asm volatile("mfence" ::: "memory");
++        for (size_t i=0;i<length;i+=64) {
++            auto *line=static_cast<uint8_t *>(buffer)+offset+i;
++            asm volatile("clflush (%0)" :: "r"(line) : "memory");
++        }
++        asm volatile("mfence" ::: "memory");
++        gHpLinearWidth=width;gHpLinearOffset=offset;
++        if (gHpLinearFlushed<1000000) OSIncrementAtomic(&gHpLinearFlushed);
++    }
++    return reinterpret_cast<IOReturn (*)(void *,void *,int,int,bool,bool)>(gHpLinearStateOriginal)(controller,fb,x,y,visible,force);
++}
++
++static void hpFenceMemoryInit(void *controller) {
++    reinterpret_cast<void (*)(void *)>(gHpFenceMemoryOriginal)(controller);
++    gHpFenceController = controller;
++}
++
++static bool hpFenceInit(void *fence, void *allocator, uint64_t index,
++                        const HPFence::Range *range, uint64_t pitch, uint32_t tile) {
++    using Original = bool (*)(void *, void *, uint64_t, const HPFence::Range *, uint64_t, uint32_t);
++    const auto original = reinterpret_cast<Original>(gHpFenceOriginal);
++    if (gHpFenceCalls < 1000000) OSIncrementAtomic(&gHpFenceCalls);
++    HPFence::Range input {};
++    if (!hpSyncRead(range, 0, input))
++        return original(fence, allocator, index, range, pitch, tile);
++    if (index == 0) {
++        gHpFenceStart = input.start; gHpFenceSize = input.size;
++        gHpFencePitch = pitch; gHpFenceTile = tile;
++        gHpFenceOutputSize = input.size;
++    }
++    if (!HPFence::matches(index, input, pitch, tile))
++        return original(fence, allocator, index, range, pitch, tile);
++    OSIncrementAtomic(&gHpFenceMatched);
++    HPFence::Layout layout {};
++    const auto controller = gHpFenceController;
++    const bool readable = hpSyncRead(controller, 0xde4, layout.reserved) &&
++        hpSyncRead(controller, 0xdc0, layout.cursorStart) &&
++        hpSyncRead(controller, 0xdc8, layout.cursorBytes) &&
++        hpSyncRead(controller, 0xc50, layout.dsbStart);
++    gHpFenceReserved = layout.reserved; gHpFenceCursorStart = layout.cursorStart;
++    gHpFenceCursorBytes = layout.cursorBytes; gHpFenceDsbStart = layout.dsbStart;
++    auto *ng = NGreen::callback;
++    const bool qualified = ng && ng->hpProfileVerified && ng->stolen_size == HPFence::Reserved &&
++        gHpFenceQualified && gHpFenceMemoryQualified && readable;
++    const HPFence::Range output = HPFence::adjusted(qualified, layout, index, input, pitch, tile);
++    gHpFenceOutputSize = output.size;
++    if (output.size == input.size) {
++        OSIncrementAtomic(&gHpFenceRefused);
++        return original(fence, allocator, index, range, pitch, tile);
++    }
++    // The qualified original copies both range words into the fence object.
++    // Native allocation/free, force-wake, and MMIO programming stay paired.
++    const bool success = original(fence, allocator, index, &output, pitch, tile);
++    if (success) OSIncrementAtomic(&gHpFenceApplied);
++    else OSIncrementAtomic(&gHpFenceNativeFailed);
++    return success;
++}
++
++bool Gen11::hpComputeBarrier(void *queue, void *accelerator, void *cmdDesc,
++                            void *event, uint16_t count, const uint16_t *list) {
++    OSIncrementAtomic(&gHpSyncAttempts);
++    // Never sleep in interrupt-disabled execution. On any refusal, retain the
++    // previous 1.0.6 bypass and record failure; a refused trial is NOT a fix.
++    auto refused = [](uint32_t reason) {
++        OSIncrementAtomic(&gHpSyncRefused); gHpSyncLastReason = reason; return false;
++    };
++    if (!ml_get_interrupts_enabled() || count > 256) return refused(1);
++    void *machine = nullptr, *hardware = nullptr, *task = nullptr, *vtable = nullptr;
++    uint32_t channelCount = 0, ownIndex = 0;
++    mach_vm_address_t testEvent = 0;
++    if (!hpSyncRead(accelerator, 0x380, machine) || !hpSyncRead(machine, 0, vtable) ||
++        !hpSyncRead(vtable, 0x190, testEvent) || testEvent != gHpSyncTestEvent ||
++        !hpSyncRead(machine, 0x30, channelCount) || !channelCount || channelCount > HPSync::MaxChannels ||
++        !hpSyncRead(cmdDesc, 0x58, hardware) || !hpSyncRead(hardware, 0x20, ownIndex) || ownIndex >= channelCount ||
++        !hpSyncRead(cmdDesc, 8, task) || !hpSyncMapped(task, 0x2B0)) return refused(2);
++    gHpSyncLastIndex = ownIndex;
++    HPSync::Dependencies dependencies;
++    const uint64_t gatherStart = hpSyncNowNs();
++    auto addEvent = [&](const void *source) {
++        uint64_t entries[HPSync::EventSlots];
++        return hpSyncRead(source, 0, entries) && dependencies.add(entries, channelCount, ownIndex);
++    };
++    if (!addEvent(event)) return refused(3);
++
++    // Reproduce the native dependency sources, using a 128-channel accumulator
++    // instead of its eight-slot merge routine (which can itself wait when full).
++    int32_t segmentLast = -1;
++    if (!hpSyncRead(queue, 0x830, segmentLast) || segmentLast < -1 || segmentLast > 15) return refused(4);
++    bool global2D = false, global3D = false;
++    uint32_t resourcesSeen = 0;
++    for (int32_t segment = 0; segment <= segmentLast; ++segment) {
++        void *resourceList = nullptr, *segmentMachine = nullptr;
++        uint8_t uses2D = 0, uses3D = 0;
++        if (!hpSyncRead(queue, 0x7B0 + 8 * segment, resourceList) ||
++            !hpSyncRead(resourceList, 0xA8, segmentMachine) || segmentMachine != machine ||
++            !hpSyncRead(resourceList, 0x78, uses2D) || !hpSyncRead(resourceList, 0x79, uses3D)) return refused(4);
++        global2D |= uses2D != 0; global3D |= uses3D != 0;
++        for (unsigned kind = 0; kind < 2; ++kind) {
++            int32_t n = 0; void *array = nullptr;
++            if (!hpSyncRead(resourceList, 0x98 + kind * 4, n) || n < 0 || n > 1024 ||
++                !hpSyncRead(resourceList, 0x80 + kind * 8, array)) return refused(4);
++            for (int32_t i = 0; i < n; ++i) {
++                if (++resourcesSeen > HPSync::MaxResources || hpSyncNowNs() - gatherStart > 50000000ULL) return refused(5);
++                void *resource = nullptr; uint8_t flags = 0;
++                if (!hpSyncRead(array, 8 * i, resource) || !hpSyncRead(resource, 0xF, flags)) return refused(4);
++                if (flags & 0x10) continue;
++                auto addResource = [&](void *res) {
++                    uint8_t slot = 0; uint8_t *events = nullptr;
++                    return hpSyncRead(res, kind ? 0x15 : 0x16, slot) &&
++                        hpSyncRead(res, 0x38, events) &&
++                        addEvent(reinterpret_cast<void *>(reinterpret_cast<uint64_t>(events) + uint64_t(slot) * 64));
++                };
++                if (!addResource(resource) || !hpSyncMapped(resource, 0x200)) return refused(3);
++                void *storage = reinterpret_cast<void *(*)(void *)>(gHpSyncStorage)(resource);
++                if (storage != resource && !addResource(storage)) return refused(3);
++            }
++        }
++    }
++
++    // Explicit command dependencies use the native command queue's event table.
++    if (count) {
++        void *tableOwner = nullptr, *parentAccelerator = nullptr;
++        uint8_t *table = nullptr; uint32_t tableCount = 0, stride = 0;
++        if (!hpSyncRead(queue, 0x5B8, tableOwner) || !hpSyncRead(tableOwner, 0x70, tableCount) ||
++            !hpSyncRead(tableOwner, 0x68, table) || !hpSyncRead(tableOwner, 0x78, parentAccelerator) ||
++            parentAccelerator != accelerator || !hpSyncRead(parentAccelerator, 0xCF4, stride) ||
++            !stride || stride > HPSync::MaxChannels) return refused(6);
++        for (uint32_t i = 0; i < count; ++i) {
++            uint16_t id = 0;
++            if (!hpSyncRead(list, i * 2, id)) return refused(6);
++            if (!id || id >= tableCount || !table) continue; // Native behavior for unused IDs.
++            const uint64_t offset = uint64_t(id) * stride * 64;
++            if (reinterpret_cast<uint64_t>(table) > UINT64_MAX - offset ||
++                !addEvent(reinterpret_cast<void *>(reinterpret_cast<uint64_t>(table) + offset))) return refused(3);
++        }
++    }
++    if (!addEvent(static_cast<uint8_t *>(queue) + 0x668)) return refused(3);
++
++    // Existing contexts only: requesting creation caused the original early-boot
++    // null dereference. Missing contexts cannot have submitted dependency events.
++    const mach_vm_address_t getters[] = {callback->ogetBlit2DContext, callback->ogetBlit3DContext,
++        callback->ogetDepthResolveContext, callback->ogetColorResolveContext};
++    auto addContext = [&](void *owner, mach_vm_address_t getter) {
++        if (!getter || !hpSyncMapped(owner, 0x2B0)) return false;
++        void *context = reinterpret_cast<void *(*)(void *, bool)>(getter)(owner, false);
++        if (!context) return true;
++        uint8_t *state = nullptr;
++        if (!hpSyncRead(context, 0xB8, state)) return false;
++        return !state || addEvent(state + 0x138);
++    };
++    for (auto getter : getters) if (!addContext(task, getter)) return refused(7);
++    if (global2D || global3D) {
++        void *globalTask = nullptr;
++        if (!hpSyncRead(accelerator, 0x150, globalTask) ||
++            (global2D && !addContext(globalTask, getters[0])) ||
++            (global3D && !addContext(globalTask, getters[1]))) return refused(7);
++    }
++    gHpSyncLastChannels = dependencies.channels;
++    // Native testEvent is a nonblocking stamp check. No GPU semaphore submission,
++    // unbounded finishEvent retry loop, context creation or new kernel allocation.
++    const uint64_t start = hpSyncNowNs();
++    bool waited = false;
++    for (;;) {
++        bool complete = true; uint32_t next = 0; uint64_t packet[HPSync::EventSlots];
++        while (dependencies.packet(next, packet)) {
++            if (!reinterpret_cast<bool (*)(void *, void *)>(testEvent)(machine, packet)) { complete = false; break; }
++        }
++        const uint32_t elapsed = static_cast<uint32_t>((hpSyncNowNs() - start) / 1000000ULL);
++        if (elapsed > gHpSyncMaxWaitMs) gHpSyncMaxWaitMs = elapsed;
++        if (complete) {
++            OSIncrementAtomic(&gHpSyncCompleted); if (waited) OSIncrementAtomic(&gHpSyncWaited);
++            gHpSyncLastReason = 0; return true;
++        }
++        if (elapsed >= HPSync::WaitLimitMs) {
++            OSIncrementAtomic(&gHpSyncTimeouts); gHpSyncLastReason = 8; gHpSyncStopped = 1;
++            // Stop this experiment for the rest of the boot, restoring the prior
++            // bypass. Any timeout disqualifies the trial, even if pixels look right.
++            return false;
++        }
++        waited = true; IOSleep(1);
++    }
++}
++
+ uint8_t Gen11::barrierSubmission(void *queue, void *accelerator, void *cmdDesc,
+ 								 void *event, uint16_t count, const uint16_t *list) {
++    if (NGreen::callback && NGreen::callback->hpProfileVerified && gHpSyncIOAF && gHpCursorTimer &&
++        reinterpret_cast<mach_vm_address_t>(__builtin_return_address(0)) == gHpSyncCaller &&
++        !gHpSyncStopped && hpComputeBarrier(queue, accelerator, cmdDesc, event, count, list))
++        return 1; // Both qualified native callers ignore this return value; the wait is the effect.
+ 	if (!NGreen::callback->isRealTGL) {
+ 		// V130: spoof-path guard for deterministic barrierSubmission+0x198 crash.
+ 		// Boot-arg control (value or flags):
+@@ -11733,8 +12307,10 @@ int Gen11::hwSetMode
+ 	// (2-lane DP SST). Write the correct value NOW so paramsFbCompare sees no lane-count change
+ 	// needed and leaves DDI_BUF_CTL_A alone — preserving the UEFI-trained 4-lane eDP link.
+ 	if (!NGreen::callback->isRealTGL) {
+-		NGreen::callback->writeReg32(0x60400, 0x8A000106);  // TRANS_DDI_FUNC_CTL_A
+-		DBGLOG("ngreen", "hwSetMode: pre-write TRANS_DDI_FUNC_CTL_A=0x8A000106 to prevent paramsFbCompare lane reprog");
++		const uint32_t bootDdi = NGreen::callback->hpProfileVerified ?
++			NGreen::callback->hpBootTransDdiFuncCtl : 0x8A000106;
++		NGreen::callback->writeReg32(0x60400, bootDdi);
++		DBGLOG("ngreen", "hwSetMode: pre-write TRANS_DDI_FUNC_CTL_A=0x%x from platform profile", bootDdi);
+ 	}
+ 	auto ret= FunctionCast(hwSetMode, callback->ohwSetMode)(that, param_1, param_2, param_3);
+ 	if (hw)
+diff --git a/src/NootedGreen/kern_gen11.hpp b/src/NootedGreen/kern_gen11.hpp
+index 9b288c7..3320d87 100755
+--- a/src/NootedGreen/kern_gen11.hpp
++++ b/src/NootedGreen/kern_gen11.hpp
+@@ -2005,6 +2005,8 @@ private:
+ 	static uint8_t barrierSubmission(void *queue, void *accelerator, void *cmdDesc,
+ 	                                void *event, uint16_t count, const uint16_t *list);
+ 	mach_vm_address_t obarrierSubmission {};
++	static bool hpComputeBarrier(void *queue, void *accelerator, void *cmdDesc,
++	                             void *event, uint16_t count, const uint16_t *list);
+ 	
+ 	static void  markBlitUsage(void *that);
+ 	mach_vm_address_t omarkBlitUsage {};
+diff --git a/src/NootedGreen/kern_genx.cpp b/src/NootedGreen/kern_genx.cpp
+index e819e9d..40c9bdf 100755
+--- a/src/NootedGreen/kern_genx.cpp
++++ b/src/NootedGreen/kern_genx.cpp
+@@ -23,6 +23,7 @@ void Genx::init() {
+ 
+ 
+ bool Genx::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
++    if (!NGreen::callback || !NGreen::callback->hpProfileVerified) return false;
+ 
+     if (kextG11FB0.loadIndex == index) {
+ 		NGreen::callback->setRMMIOIfNecessary();
+diff --git a/src/NootedGreen/kern_green.cpp b/src/NootedGreen/kern_green.cpp
+index b1b6831..ccaed98 100755
+--- a/src/NootedGreen/kern_green.cpp
++++ b/src/NootedGreen/kern_green.cpp
+@@ -2,6 +2,7 @@
+ //  details.
+ 
+ #include "kern_green.hpp"
++#include "kern_hp8bdf.hpp"
+ #include "kern_gen11.hpp"
+ #include "kern_genx.hpp"
+ #include "kern_model.hpp"
+@@ -106,7 +107,7 @@ static bool seedIGPUPropertiesOnEntry(IORegistryEntry *entry) {
+ 	}
+ 
+ 	if (!entry->getProperty("saved-config")) {
+-		static uint8_t sconf[] = {};
++		static uint8_t sconf[0xea] = {};
+ 		entry->setProperty("saved-config", sconf, 0xea);
+ 		changed = true;
+ 	}
+@@ -146,6 +147,21 @@ static void seedIGPUPropertiesEarly() {
+ 
+ void NGreen::init() {
+     callback = this;
++    const bool diagnosticOnly = checkKernelArgument("-ngreenhpdiag");
++    SYSLOG("ngreen", "HP8BDF 1.0.12 bootstrap: diagnosticOnly=%d", diagnosticOnly);
++    if ((!checkKernelArgument("-ngreenhp") && !diagnosticOnly) || getKernelVersion() != KernelVersion::Tahoe) {
++        SYSLOG("ngreen", "HP8BDF inactive: requires explicit -ngreenhp and Darwin 25; no callbacks registered");
++        return;
++    }
++    // Probe-only boot: register no graphics, dyld or driver-load callbacks.
++    // It checks the same qualification path and preserves firmware display state.
++    if (diagnosticOnly) {
++        if (auto *root = IORegistryEntry::getRegistryRoot())
++            root->setProperty("hp-graphics-probe-stage", "bootstrap");
++        lilu.onPatcherLoadForce(
++            [](void *user, KernelPatcher &patcher) { static_cast<NGreen *>(user)->processPatcher(patcher); }, this);
++        return;
++    }
+ 	
+ 	lilu.onKextLoadForce(&kextAGDP);
+ 	/*lilu.onKextLoadForce(&kextBacklight);
+@@ -171,6 +187,156 @@ void NGreen::init() {
+ 
+ 
+ void NGreen::processPatcher(KernelPatcher &patcher) {
++    hpProfileVerified = false;
++    auto *probeRoot = IORegistryEntry::getRegistryRoot();
++    if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "checking-build");
++    // kern.osversion is mutable and may still be empty at this early callback.
++    // Qualify the exact kernel shipped with 25G241 instead. XNU panic_init fills
++    // kernel_uuid_string from LC_UUID before IOKit starts; _version is compiled in.
++    // The userspace staging helper independently requires the OS build 25G241.
++    const auto versionAddress = patcher.solveSymbol(KernelPatcher::KernelID, "_version");
++    const auto uuidAddress = patcher.solveSymbol(KernelPatcher::KernelID, "_kernel_uuid_string");
++    char observedVersion[sizeof(HP8BDF::KernelVersion)] {};
++    char observedUUID[sizeof(HP8BDF::KernelUUID)] {};
++    if (versionAddress) {
++        memcpy(observedVersion, reinterpret_cast<const void *>(versionAddress), sizeof(observedVersion));
++        observedVersion[sizeof(observedVersion)-1] = '\0';
++    }
++    if (uuidAddress) {
++        memcpy(observedUUID, reinterpret_cast<const void *>(uuidAddress), sizeof(observedUUID));
++        observedUUID[sizeof(observedUUID)-1] = '\0';
++    }
++    if (probeRoot) {
++        probeRoot->setProperty("hp-graphics-plugin-version", "1.0.12");
++        probeRoot->setProperty("hp-graphics-kernel-version", observedVersion);
++        probeRoot->setProperty("hp-graphics-kernel-uuid", observedUUID);
++    }
++    if (!versionAddress || !uuidAddress ||
++        memcmp(reinterpret_cast<const void *>(versionAddress), HP8BDF::KernelVersion, sizeof(HP8BDF::KernelVersion)) ||
++        memcmp(reinterpret_cast<const void *>(uuidAddress), HP8BDF::KernelUUID, sizeof(HP8BDF::KernelUUID))) {
++        patcher.clearError();
++        SYSLOG("ngreen", "HP8BDF rejected kernel identity: versionResolved=%d uuidResolved=%d UUID=%s version=%s",
++               versionAddress != 0, uuidAddress != 0, observedUUID, observedVersion);
++        if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "rejected-kernel-identity");
++        return;
++    }
++    SYSLOG("ngreen", "HP8BDF exact 25G241 kernel accepted: %s", observedUUID);
++    auto *devInfo = DeviceInfo::create();
++    auto *physical = OSDynamicCast(IOPCIDevice, devInfo ? devInfo->videoBuiltin : nullptr);
++    if (probeRoot) {
++        probeRoot->setProperty("hp-graphics-device-info-present", devInfo != nullptr);
++        probeRoot->setProperty("hp-graphics-builtin-entry-present", devInfo && devInfo->videoBuiltin);
++        probeRoot->setProperty("hp-graphics-pci-object-present", physical != nullptr);
++        if (devInfo && devInfo->videoBuiltin) {
++            auto *entry = devInfo->videoBuiltin;
++            probeRoot->setProperty("hp-graphics-device-name", safeString(entry->getName()));
++            probeRoot->setProperty("hp-graphics-device-class", entry->getMetaClass()->getClassName());
++            const char *names[] = {"vendor-id", "device-id", "subsystem-vendor-id", "subsystem-id", "revision-id"};
++            const char *properties[] = {"hp-graphics-registry-vendor", "hp-graphics-registry-device",
++                "hp-graphics-registry-subvendor", "hp-graphics-registry-subdevice", "hp-graphics-registry-revision"};
++            for (size_t i = 0; i < arrsize(names); ++i) {
++                uint32_t value = 0xffffffffU;
++                if (WIOKit::getOSDataValue(entry, names[i], value))
++                    probeRoot->setProperty(properties[i], value, 32);
++            }
++        }
++    }
++    if (!physical) {
++        if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "rejected-pci-object");
++        if (devInfo) DeviceInfo::deleter(devInfo);
++        return;
++    }
++    // Lilu's own PCI-read helper waits for IOService publication. Our earlier
++    // direct extendedConfigRead calls omitted that prerequisite. Wait at most
++    // Lilu's existing 256 * 20 ms bound, with no power or configuration writes.
++    if (probeRoot) {
++        probeRoot->setProperty("hp-graphics-published-before-wait", physical->inPlane(gIOServicePlane));
++        probeRoot->setProperty("hp-graphics-probe-stage", "waiting-for-pci-publication");
++    }
++    const bool published = WIOKit::awaitPublishing(physical);
++    if (probeRoot) probeRoot->setProperty("hp-graphics-published-after-wait", published);
++    if (!published) {
++        if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "rejected-pci-publication");
++        DeviceInfo::deleter(devInfo);
++        return;
++    }
++    if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "reading-pci-identity");
++    const uint16_t vendor = physical->configRead16(0x00);
++    const uint16_t device = physical->configRead16(0x02);
++    const uint16_t subvendor = physical->configRead16(0x2c);
++    const uint16_t subdevice = physical->configRead16(0x2e);
++    const uint8_t revision = physical->configRead8(0x08);
++    if (probeRoot) {
++        probeRoot->setProperty("hp-graphics-pci-vendor", vendor, 32);
++        probeRoot->setProperty("hp-graphics-pci-device", device, 32);
++        probeRoot->setProperty("hp-graphics-pci-subvendor", subvendor, 32);
++        probeRoot->setProperty("hp-graphics-pci-subdevice", subdevice, 32);
++        probeRoot->setProperty("hp-graphics-pci-revision", revision, 32);
++    }
++    SYSLOG("ngreen", "HP8BDF PCI read: %04x:%04x subsystem %04x:%04x rev%02x",
++           vendor, device, subvendor, subdevice, revision);
++    if (!HP8BDF::matches(vendor, device, subvendor, subdevice, revision)) {
++        SYSLOG("ngreen", "HP8BDF rejected: physical PCI identity/revision mismatch");
++        if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "rejected-pci");
++        if (devInfo) DeviceInfo::deleter(devInfo);
++        return;
++    }
++    // Read the real allocation before this plugin installs PCI-spoofing routes.
++    if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "reading-gms");
++    const uint16_t realGgc = physical->configRead16(0x50);
++    const uint8_t realGms = realGgc >> 8;
++    stolen_size = HP8BDF::stolenBytes(realGms);
++    if (probeRoot) {
++        probeRoot->setProperty("hp-graphics-ggc", realGgc, 32);
++        probeRoot->setProperty("hp-graphics-gms", realGms, 32);
++        probeRoot->setProperty("hp-graphics-reserved-bytes", stolen_size, 32);
++        probeRoot->setProperty("hp-graphics-probe-stage", "checking-reservation");
++    }
++    if (!stolen_size) {
++        SYSLOG("ngreen", "HP8BDF rejected: unsupported or zero GMS=0x%x", realGms);
++        if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "rejected-reservation");
++        DeviceInfo::deleter(devInfo);
++        return;
++    }
++    this->iGPU = physical;
++    if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "checking-firmware-display");
++    setRMMIOIfNecessary();
++    if (probeRoot) probeRoot->setProperty("hp-graphics-bar0-length", rmmio ? rmmio->getLength() : 0, 64);
++    const uint32_t pipeA = rmmio && rmmioPtr && rmmio->getLength() >= 0xD0000 ? readReg32(0x70008) : 0;
++    if (probeRoot) probeRoot->setProperty("hp-graphics-pipe-a", pipeA, 32);
++    if (!rmmio || !rmmioPtr || rmmio->getLength() < 0xD0000 || !(pipeA & 0x80000000U)) {
++        SYSLOG("ngreen", "HP8BDF rejected: mapped BAR0 and firmware-active pipe A are required");
++        if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "rejected-firmware-display");
++        if (rmmio) rmmio->release();
++        rmmio = nullptr;
++        rmmioPtr = nullptr;
++        iGPU = nullptr;
++        DeviceInfo::deleter(devInfo);
++        return;
++    }
++    hpBootTransDdiFuncCtl = readReg32(0x60400);
++    if (probeRoot) {
++        probeRoot->setProperty("hp-graphics-trans-ddi-a", hpBootTransDdiFuncCtl, 32);
++        probeRoot->setProperty("hp-graphics-pipe-a", readReg32(0x70008), 32);
++        probeRoot->setProperty("hp-graphics-ddi-buffer-a", readReg32(0x64000), 32);
++    }
++    if (checkKernelArgument("-ngreenhpdiag")) {
++        if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "qualified-read-only");
++        SYSLOG("ngreen", "HP8BDF diagnostic qualified: GMS=0x%x reserved=%u MiB PIPE_A=0x%x TRANS_DDI_A=0x%x; no graphics patches or register writes",
++            realGms, stolen_size / HP8BDF::MiB, readReg32(0x70008), hpBootTransDdiFuncCtl);
++        if (rmmio) rmmio->release();
++        rmmio = nullptr;
++        rmmioPtr = nullptr;
++        iGPU = nullptr;
++        DeviceInfo::deleter(devInfo);
++        return;
++    }
++    hpProfileVerified = true;
++    if (probeRoot) probeRoot->setProperty("hp-graphics-probe-stage", "graphics-patches-enabled");
++    SYSLOG("ngreen", "HP8BDF firmware display: TRANS_DDI_FUNC_CTL_A=0x%x DDI_BUF_CTL_A=0x%x",
++           hpBootTransDdiFuncCtl, readReg32(0x64000));
++    SYSLOG("ngreen", "HP8BDF accepted: physical A7A1 rev04, GMS=0x%x, reserved=%u MiB, RP0 cap=%u MHz",
++           realGms, stolen_size / HP8BDF::MiB, HP8BDF::MaxGpuMHz);
+ 	// Hook _cs_validate_page FIRST — before DeviceInfo which blocks
+ 	// for >60s polling PEGP (NVIDIA dGPU) disable via processSwitchOff.
+ 	// Without this, WindowServer starts before the hook is established
+@@ -188,7 +354,6 @@ void NGreen::processPatcher(KernelPatcher &patcher) {
+ 		SYSLOG("ngreen", "compat mode: legacy IGPU property seeding disabled (use -ngreenforceprops to enable)");
+ 	}
+ 
+-    auto *devInfo = DeviceInfo::create();
+     if (devInfo) {
+         devInfo->processSwitchOff();
+ 		
+@@ -212,7 +377,7 @@ void NGreen::processPatcher(KernelPatcher &patcher) {
+ 			seedIGPUPropertiesOnEntry(this->iGPU);
+ 		}
+ 		
+-		static uint8_t sconf[] = {};
++		static uint8_t sconf[0xea] = {};
+ 		
+ 		static uint8_t panel[] = {0x01, 0x00, 0x00, 0x00};
+ 		/*static uint8_t panel1[] = {0x19, 0x01, 0x00, 0x00};
+@@ -266,21 +431,10 @@ void NGreen::processPatcher(KernelPatcher &patcher) {
+                    family, model, stepping, this->isRealTGL);
+         }
+ 		
+-		auto gms = WIOKit::readPCIConfigValue(devInfo->videoBuiltin, WIOKit::kIOPCIConfigGraphicsControl, 0, 16) >> 8;
+-		
+-		if (gms < 0x10) {
+-			stolen_size = gms * 32;
+-		} else if (gms == 0x20 || gms == 0x30 || gms == 0x40) {
+-			stolen_size = gms * 32;
+-		} else if (gms >= 0xF0 && gms <= 0xFE) {
+-			stolen_size = ((gms & 0x0F) + 1) * 4;
+-		} else {
+-			SYSLOG( "ngreen", "PANIC stolen_size=0 check DVMT in bios");
+-		}
+-		if (stolen_size<128) stolen_size=128;
+-		stolen_size *= (1024 * 1024);
+-		SYSLOG("ngreen", "stolen_size 0x%x",stolen_size);
+-		
++        // The physical GMS was decoded before spoofing. Do not round 60 MiB up to
++        // 128 MiB: that would advertise memory the firmware has not reserved.
++        SYSLOG("ngreen", "HP8BDF preserving actual reserved size 0x%x", stolen_size);
++
+ 		if (isLegacyIGPUPropSeedingEnabled()) {
+ 			static uint8_t unifiedMem[] = {0x00, 0x00, 0x00, 0x60};
+ 			this->iGPU->setProperty("framebuffer-unifiedmem", unifiedMem, arrsize(unifiedMem));
+@@ -330,7 +484,12 @@ bool NGreen::wrapIGAccelDeviceStart(void *that) {
+ void NGreen::setRMMIOIfNecessary() {
+ 	if (UNLIKELY(!this->rmmio || !this->rmmio->getLength())) {
+ 		this->rmmio = this->iGPU->mapDeviceMemoryWithRegister(kIOPCIConfigBaseAddress0);
+-		this->rmmioPtr = reinterpret_cast<volatile uint32_t *>(this->rmmio->getVirtualAddress());
++		if (!this->rmmio || !this->rmmio->getLength()) {
++            SYSLOG("ngreen", "HP8BDF BAR0 map failed");
++            this->rmmioPtr = nullptr;
++            return;
++        }
++        this->rmmioPtr = reinterpret_cast<volatile uint32_t *>(this->rmmio->getVirtualAddress());
+ 	}
+ }
+ 
+@@ -502,7 +661,10 @@ static IOReturn wrapSetIdMode(void *that, uint32_t id, uint32_t mode) {
+ }
+ 
+ bool NGreen::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
++    if (!hpProfileVerified) return false;
+ 	if (kextIOAcceleratorFamily2.loadIndex == index) {
++		extern void hpSyncResolveIOAF(KernelPatcher &, size_t, mach_vm_address_t, size_t);
++		hpSyncResolveIOAF(patcher, index, address, size);
+ 		SYSLOG("NGreen", "IOAccelF2: TEXT 0x%llx size 0x%lx", address, size);
+ 		
+ 		// ── V40: f2 FIXED based on V39 diagnostics ──
+diff --git a/src/NootedGreen/kern_green.hpp b/src/NootedGreen/kern_green.hpp
+index c279582..2e5ba26 100755
+--- a/src/NootedGreen/kern_green.hpp
++++ b/src/NootedGreen/kern_green.hpp
+@@ -47,6 +47,8 @@ class NGreen {
+ 
+     public:
+     static NGreen *callback;
++    bool hpProfileVerified {false};
++    uint32_t hpBootTransDdiFuncCtl {0};
+     void init();
+     void processPatcher(KernelPatcher &patcher);
+     bool processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
+diff --git a/src/NootedGreen/kern_start.cpp b/src/NootedGreen/kern_start.cpp
+index 926126a..d320e19 100755
+--- a/src/NootedGreen/kern_start.cpp
++++ b/src/NootedGreen/kern_start.cpp
+@@ -13,14 +13,14 @@ static const char *bootargDebug = "-NGreenDebug";
+ PluginConfiguration ADDPR(config) {
+     xStringify(PRODUCT_NAME),
+     parseModuleVersion(xStringify(MODULE_VERSION)),
+-    LiluAPI::AllowNormal | LiluAPI::AllowInstallerRecovery | LiluAPI::AllowSafeMode,
++    LiluAPI::AllowNormal,
+ 	nullptr,
+ 	0,
+ 	&bootargDebug,
+ 	1,
+ 	nullptr,
+ 	0,
+-	KernelVersion::Ventura,
++	KernelVersion::Tahoe,
+ 	KernelVersion::Tahoe,
+ 	[]() { nb.init(); },
+ };

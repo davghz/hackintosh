@@ -1,0 +1,8 @@
+/private export-ignore
+/deps export-ignore
+*.py text eol=lf
+*.c text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.md text eol=lf
+*.patch -text

@@ -1,0 +1,238 @@
+{
+  "note": "Reference only: matching files are not bundled; identities removed; not a bootable EFI",
+  "acpi": [
+    {
+      "Comment": "HP8BDF Pass1 repair plus I2C0/I2C1 resource renames; requires exact original table",
+      "Enabled": true,
+      "Path": "DSDT-HP8BDF-Pass1-I2C01.aml"
+    },
+    {
+      "Comment": "HP8BDF Darwin-only legacy CPU objects for enabled MADT UIDs0-11",
+      "Enabled": true,
+      "Path": "SSDT-PLUG-ALT-HP12.aml"
+    },
+    {
+      "Comment": "USB power properties for macOS",
+      "Enabled": true,
+      "Path": "SSDT-USBX.aml"
+    },
+    {
+      "Comment": "HP8BDF macOS-only EC compatibility; real EC0 unchanged",
+      "Enabled": true,
+      "Path": "SSDT-EC-HP8BDF.aml"
+    },
+    {
+      "Comment": "HP 8BDF: Darwin selects existing RTC via STAS",
+      "Enabled": true,
+      "Path": "SSDT-AWAC-HP8BDF.aml"
+    },
+    {
+      "Comment": "HP8BDF Darwin-only touchpad polling resources",
+      "Enabled": true,
+      "Path": "SSDT-I2C0-HP8BDF.aml"
+    },
+    {
+      "Comment": "HP8BDF Darwin-only I2C1.TPL1 polling resources",
+      "Enabled": true,
+      "Path": "SSDT-I2C1-HP8BDF.aml"
+    }
+  ],
+  "kernel": [
+    {
+      "Arch": "x86_64",
+      "BundlePath": "Lilu.kext",
+      "Comment": "Lilu 1.7.2 DEBUG",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/Lilu",
+      "MaxKernel": "",
+      "MinKernel": "",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "NootedGreenHP.kext",
+      "Comment": "HP 8BDF graphics 1.0.12: qualified acceleration and corrected cursor; full sleep unresolved",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/NootedGreenHP",
+      "MaxKernel": "25.99.99",
+      "MinKernel": "25.0.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "VirtualSMC.kext",
+      "Comment": "VirtualSMC 1.3.8 DEBUG",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/VirtualSMC",
+      "MaxKernel": "",
+      "MinKernel": "",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "VoodooPS2Controller.kext",
+      "Comment": "PS/2 controller",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/VoodooPS2Controller",
+      "MaxKernel": "",
+      "MinKernel": "",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "VoodooPS2Controller.kext/Contents/PlugIns/VoodooInput.kext",
+      "Comment": "HP Tahoe HID ABI rebuild; preserves input; native shutdown test pending",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/VoodooInput",
+      "MaxKernel": "25.99.99",
+      "MinKernel": "25.0.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "VoodooPS2Controller.kext/Contents/PlugIns/VoodooPS2Keyboard.kext",
+      "Comment": "Laptop keyboard plugin",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/VoodooPS2Keyboard",
+      "MaxKernel": "",
+      "MinKernel": "",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "Any",
+      "BundlePath": "USBMapHP8BDF.kext",
+      "Comment": "HP 8BDF firmware/live-device map: XHCI8 TXHC2 ports; connectors need runtime verification",
+      "Enabled": true,
+      "ExecutablePath": "",
+      "MaxKernel": "",
+      "MinKernel": "15.0.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "VoodooI2C.kext/Contents/PlugIns/VoodooI2CServices.kext",
+      "Comment": "HP8BDF I2C polling / upstream2.9.1",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/VoodooI2CServices",
+      "MaxKernel": "25.99.99",
+      "MinKernel": "25.0.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "VoodooI2C.kext/Contents/PlugIns/VoodooGPIO.kext",
+      "Comment": "HP8BDF I2C polling / upstream2.9.1",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/VoodooGPIO",
+      "MaxKernel": "25.99.99",
+      "MinKernel": "25.0.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "VoodooI2C.kext",
+      "Comment": "HP8BDF I2C polling / upstream5c0c99c localbuild",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/VoodooI2C",
+      "MaxKernel": "25.99.99",
+      "MinKernel": "25.0.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "HP8BDFI2C1.kext",
+      "Comment": "HP8BDF I2C1 touchscreen controller personality; physical touch unverified",
+      "Enabled": true,
+      "ExecutablePath": "",
+      "MaxKernel": "25.99.99",
+      "MinKernel": "25.0.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "VoodooI2CHID.kext",
+      "Comment": "HP Tahoe HID ABI rebuild; preserves input; native shutdown test pending",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/VoodooI2CHID",
+      "MaxKernel": "25.99.99",
+      "MinKernel": "25.0.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "itlwm.kext",
+      "Comment": "Official itlwm 2.3.0 AX211; Recovery automatic Wi-Fi via Ethernet",
+      "Enabled": false,
+      "ExecutablePath": "Contents/MacOS/itlwm",
+      "MaxKernel": "25.99.99",
+      "MinKernel": "25.0.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "AirportItlwmHP.kext",
+      "Comment": "HP AX211 native PNVM resource correction 0.1.4",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/AirportItlwmHP",
+      "MaxKernel": "25.6.0",
+      "MinKernel": "25.6.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "HPBAT1Bridge.kext",
+      "Comment": "HP8BDF source-built BAT1 native power source0.1; isolated battery trial",
+      "Enabled": false,
+      "ExecutablePath": "Contents/MacOS/HPBAT1Bridge",
+      "MaxKernel": "25.6.99",
+      "MinKernel": "25.6.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "HPBAT1Bridge11.kext",
+      "Comment": "HP8BDF source-built battery0.1.1: dependency readiness and retained startup diagnostics",
+      "Enabled": false,
+      "ExecutablePath": "Contents/MacOS/HPBAT1Bridge",
+      "MaxKernel": "25.6.99",
+      "MinKernel": "25.6.0",
+      "PlistPath": "Contents/Info.plist"
+    },
+    {
+      "Arch": "x86_64",
+      "BundlePath": "HPBAT1Bridge12.kext",
+      "Comment": "HP8BDF battery0.1.2: immutable kernel identity and deferred exact OS build guard",
+      "Enabled": true,
+      "ExecutablePath": "Contents/MacOS/HPBAT1Bridge",
+      "MaxKernel": "25.6.99",
+      "MinKernel": "25.6.0",
+      "PlistPath": "Contents/Info.plist"
+    }
+  ],
+  "uefi_drivers": [
+    {
+      "Arguments": "",
+      "Comment": "Required OpenCore runtime services",
+      "Enabled": true,
+      "HideVerbose": false,
+      "LoadEarly": false,
+      "Path": "OpenRuntime.efi"
+    },
+    {
+      "Arguments": "",
+      "Comment": "HFS+ installer volume support",
+      "Enabled": true,
+      "HideVerbose": true,
+      "LoadEarly": false,
+      "Path": "OpenHfsPlus.efi"
+    },
+    {
+      "Arguments": "",
+      "Comment": "Reset NVRAM from the picker",
+      "Enabled": true,
+      "HideVerbose": false,
+      "LoadEarly": false,
+      "Path": "ResetNvramEntry.efi"
+    }
+  ]
+}

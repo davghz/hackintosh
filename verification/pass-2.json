@@ -1,0 +1,25 @@
+{
+  "scope": "Second packaging verification: independent index readback, known local-data comparison, config comparison, Python parse, Makefile dry-run and documentation links",
+  "checks": {
+    "exact_index_matches_working_public_files": true,
+    "all_public_python_parses": true,
+    "known_local_identity_and_network_values_absent": true,
+    "no_original_personal_paths": true,
+    "only_public_roots_staged": true,
+    "no_gitlinks_or_symlinks": true,
+    "private_and_generated_paths_ignored": true,
+    "config_diff_only_documented_redactions": true,
+    "ocvalidate_1_0_8_passed": true,
+    "authored_document_links_resolve": true,
+    "efi_make_targets_resolve_without_execution": true,
+    "no_remote_configured": true,
+    "selected_live_config_preserved": true
+  },
+  "failures": [],
+  "passed": true,
+  "limitations": [
+    "No fresh Linux OVMF execution or physical CPU unlock; original successful run documented separately",
+    "No driver deployment or physical sleep test",
+    "Original-code license choice pending; upstream terms retained"
+  ]
+}

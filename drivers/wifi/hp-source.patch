@@ -1,0 +1,1425 @@
+diff --git a/AirportItlwm/AirportItlwmSkywalkInterface.cpp b/AirportItlwm/AirportItlwmSkywalkInterface.cpp
+index d5891ed..d5d2e61 100644
+--- a/AirportItlwm/AirportItlwmSkywalkInterface.cpp
++++ b/AirportItlwm/AirportItlwmSkywalkInterface.cpp
+@@ -1,3 +1,4 @@
++#include "HPWifiDiag.h"
+ //
+ //  AirportItlwmSkywalkInterface.cpp
+ //  AirportItlwm-Sonoma
+@@ -273,24 +274,25 @@ void AirportItlwmSkywalkInterface::setGTK(const u_int8_t *gtk, size_t key_len, u
+ bool AirportItlwmSkywalkInterface::
+ init(IOService *provider)
+ {
+-    bool ret = IO80211InfraInterface::init();
++    HPWifiDiag(301);
++    bool ret = HPWifiDiagBool(302, IO80211InfraInterface::init());
+     if (!ret) {
+         XYLog("%s IO80211InfraInterface init failed\n", __PRETTY_FUNCTION__);
+         return false;
+     }
+     instance = OSDynamicCast(AirportItlwm, provider);
+-    if (!instance)
++    if (!HPWifiDiagBool(303, instance != nullptr))
+         return false;
+     this->fHalService = instance->fHalService;
+     this->scanSource = instance->scanSource;
+ #ifdef AIRPORT_WCL
+     IOEthernetAddress address;
+-    if (instance->getHardwareAddress(&address) != kIOReturnSuccess)
++    if (HPWifiDiagResult(304, instance->getHardwareAddress(&address)) != kIOReturnSuccess)
+         return false;
+     memcpy(wclPermanentMAC, &address, sizeof(wclPermanentMAC));
+-    if (!IO80211SkywalkInterface::init(provider, reinterpret_cast<ether_addr *>(&address)))
++    if (!HPWifiDiagBool(305, IO80211SkywalkInterface::init(provider, reinterpret_cast<ether_addr *>(&address))))
+         return false;
+-    if (!initWCL())
++    if (!HPWifiDiagBool(306, initWCL()))
+         return false;
+ #endif
+     return ret;
+@@ -666,7 +668,7 @@ getRSSI(struct apple80211_rssi_data *rd)
+         rd->rssi[0] = rd->aggregate_rssi
+         = rd->rssi_ext[0]
+         = rd->aggregate_rssi_ext
+-        = -(0 - IWM_MIN_DBM - ic->ic_bss->ni_rssi);
++        = -(0 - IWX_MIN_DBM - ic->ic_bss->ni_rssi);
+         return kIOReturnSuccess;
+     }
+     return 6;
+@@ -934,7 +936,7 @@ getLINK_CHANGED_EVENT_DATA(struct apple80211_link_changed_event_data *ed)
+         ed->voluntary = disassocIsVoluntary;
+         ed->reason = APPLE80211_LINK_DOWN_REASON_DEAUTH;
+     } else
+-        ed->rssi = -(0 - IWM_MIN_DBM - ic->ic_bss->ni_rssi);
++        ed->rssi = -(0 - IWX_MIN_DBM - ic->ic_bss->ni_rssi);
+     XYLog("Link %s, reason: %d, voluntary: %d\n", ed->isLinkDown ? "down" : "up", ed->reason, ed->voluntary);
+     return kIOReturnSuccess;
+ }
+@@ -996,7 +998,7 @@ static int convertNodeToScanResult(ItlHalService *fHalService, struct ieee80211_
+     result->asr_channel.channel = ieee80211_chan2ieee(fHalService->get80211Controller(), fNextNodeToSend->ni_chan);
+     result->asr_channel.flags = ieeeChanFlag2appleScanFlagVentura(fNextNodeToSend->ni_chan->ic_flags);
+     result->asr_noise = -fHalService->getDriverInfo()->getBSSNoise();
+-    result->asr_rssi = -(0 - IWM_MIN_DBM - fNextNodeToSend->ni_rssi);
++    result->asr_rssi = -(0 - IWX_MIN_DBM - fNextNodeToSend->ni_rssi);
+     memcpy(result->asr_bssid, fNextNodeToSend->ni_bssid, IEEE80211_ADDR_LEN);
+     result->asr_ssid_len = fNextNodeToSend->ni_esslen;
+     if (result->asr_ssid_len != 0)
+diff --git a/AirportItlwm/AirportItlwmV2.cpp b/AirportItlwm/AirportItlwmV2.cpp
+index ea1c5ac..0b5f074 100644
+--- a/AirportItlwm/AirportItlwmV2.cpp
++++ b/AirportItlwm/AirportItlwmV2.cpp
+@@ -1,3 +1,4 @@
++#include "HPWifiDiag.h"
+ //
+ //  AirportItlwmV2.cpp
+ //  AirportItlwm-Sonoma
+@@ -24,6 +25,7 @@ IOCommandGate *_fCommandGate;
+ 
+ void AirportItlwm::releaseAll()
+ {
++    HPWifiDiag(900);
+ #ifdef AIRPORT_WCL
+     if (fNetIf)
+         static_cast<AirportItlwmSkywalkInterface *>(fNetIf)->stopWCL();
+@@ -168,6 +170,7 @@ IOService* AirportItlwm::probe(IOService *provider, SInt32 *score)
+ bool AirportItlwm::
+ initCCLogs()
+ {
++    HPWifiDiag(110);
+     CCPipeOptions driverLogOptions = { 0 };
+     driverLogOptions.pipe_type = 0;
+     driverLogOptions.log_data_type = 1;
+@@ -184,17 +187,17 @@ initCCLogs()
+     driverLogPipe = CCPipe::withOwnerNameCapacity(this, "com.zxystd.AirportItlwm", "DriverLogs", &driverLogOptions);
+     XYLog("%s driverLogPipeRet %d\n", __FUNCTION__, driverLogPipe != NULL);
+ #ifdef AIRPORT_WCL
+-    if (!driverLogPipe || !getWorkLoop())
++    if (!HPWifiDiagBool(111, driverLogPipe && getWorkLoop()))
+         return false;
+     // The factory only initializes the pipe. startPipe creates its event sources.
+     // Qualify the native method: do not dispatch through the legacy CCPipe header.
+     driverLogPipeStarted = driverLogPipe->CCPipe::startPipe();
+-    if (!driverLogPipeStarted)
++    if (!HPWifiDiagBool(112, driverLogPipeStarted))
+         return false;
+     CCStreamOptions loggerOptions = {};
+     CCStream *logger = CCStream::withPipeAndName(driverLogPipe, "AirportItlwm", &loggerOptions);
+     driverLogger = OSDynamicCast(CCLogStream, logger);
+-    if (!driverLogger) {
++    if (!HPWifiDiagBool(113, driverLogger != nullptr)) {
+         OSSafeReleaseNULL(logger);
+         return false;
+     }
+@@ -215,10 +218,10 @@ initCCLogs()
+     driverDataPathPipe = CCPipe::withOwnerNameCapacity(this, "com.zxystd.AirportItlwm", "DatapathEvents", &driverLogOptions);
+     XYLog("%s driverDataPathPipeRet %d\n", __FUNCTION__, driverDataPathPipe != NULL);
+ #ifdef AIRPORT_WCL
+-    if (!driverDataPathPipe)
++    if (!HPWifiDiagBool(114, driverDataPathPipe != nullptr))
+         return false;
+     driverDataPathPipeStarted = driverDataPathPipe->CCPipe::startPipe();
+-    if (!driverDataPathPipeStarted)
++    if (!HPWifiDiagBool(115, driverDataPathPipeStarted))
+         return false;
+ #endif
+ 
+@@ -232,10 +235,10 @@ initCCLogs()
+     driverSnapshotsPipe = CCPipe::withOwnerNameCapacity(this, "com.zxystd.AirportItlwm", "StateSnapshots", &driverLogOptions);
+     XYLog("%s driverSnapshotsPipeRet %d\n", __FUNCTION__, driverSnapshotsPipe != NULL);
+ #ifdef AIRPORT_WCL
+-    if (!driverSnapshotsPipe)
++    if (!HPWifiDiagBool(116, driverSnapshotsPipe != nullptr))
+         return false;
+     driverSnapshotsPipeStarted = driverSnapshotsPipe->CCPipe::startPipe();
+-    if (!driverSnapshotsPipeStarted)
++    if (!HPWifiDiagBool(117, driverSnapshotsPipeStarted))
+         return false;
+ #endif
+ 
+@@ -245,15 +248,15 @@ initCCLogs()
+ #ifdef AIRPORT_WCL
+     driverFaultStream = CCStream::withPipeAndName(driverSnapshotsPipe, "FaultReporter", &faultReportOptions);
+     CCDataStream *dataStream = OSDynamicCast(CCDataStream, driverFaultStream);
+-    if (!dataStream || !_fWorkloop) {
++    if (!HPWifiDiagBool(118, dataStream && _fWorkloop)) {
+         return false;
+     }
+     driverCoreFaultReporter = CCFaultReporter::withStreamWorkloop(dataStream, _fWorkloop);
+-    if (!driverCoreFaultReporter) {
++    if (!HPWifiDiagBool(119, driverCoreFaultReporter != nullptr)) {
+         return false;
+     }
+     driverFaultReporter = IO80211FaultReporter::allocWithParams(driverCoreFaultReporter);
+-    if (!OSDynamicCast(CommonFaultReporter, driverFaultReporter)) {
++    if (!HPWifiDiagBool(120, OSDynamicCast(CommonFaultReporter, driverFaultReporter) != nullptr)) {
+         return false;
+     }
+ #else
+@@ -270,6 +273,7 @@ bool AirportItlwm::start(IOService *provider)
+         return false;
+ #endif
+     XYLog("%s\n", __PRETTY_FUNCTION__);
++    HPWifiDiag(100);
+     struct IOSkywalkEthernetInterface::RegistrationInfo registInfo;
+     int boot_value = 0;
+ 
+@@ -277,12 +281,12 @@ bool AirportItlwm::start(IOService *provider)
+     setProperty("built-in", OSData::withBytes(&builtIn, sizeof(builtIn)));
+     setProperty("DriverKitDriver", kOSBooleanFalse);
+ #ifdef AIRPORT_WCL
+-    if (!initCCLogs()) {
++    if (!HPWifiDiagBool(130, initCCLogs())) {
+         releaseAll();
+         return false;
+     }
+ #endif
+-    if (!super::start(provider)) {
++    if (!HPWifiDiagBool(150, super::start(provider))) {
+ #ifdef AIRPORT_WCL
+         releaseAll();
+ #endif
+@@ -292,23 +296,23 @@ bool AirportItlwm::start(IOService *provider)
+     pciNub->setIOEnable(true);
+     pciNub->setMemoryEnable(true);
+     pciNub->configWrite8(0x41, 0);
+-    if (pciNub->requestPowerDomainState(kIOPMPowerOn,
+-                                        (IOPowerConnection *) getParentEntry(gIOPowerPlane), IOPMLowestState) != IOPMNoErr) {
++    if (HPWifiDiagResult(160, pciNub->requestPowerDomainState(kIOPMPowerOn,
++                                        (IOPowerConnection *) getParentEntry(gIOPowerPlane), IOPMLowestState)) != IOPMNoErr) {
+         super::stop(provider);
+         return false;
+     }
+-    if (initPCIPowerManagment(pciNub) == false) {
++    if (!HPWifiDiagBool(161, initPCIPowerManagment(pciNub))) {
+         super::stop(pciNub);
+         return false;
+     }
+-    if (_fWorkloop == NULL) {
++    if (!HPWifiDiagBool(170, _fWorkloop != nullptr)) {
+         XYLog("No _fWorkloop!!\n");
+         super::stop(pciNub);
+         releaseAll();
+         return false;
+     }
+     _fCommandGate = IOCommandGate::commandGate(this, (IOCommandGate::Action)AirportItlwm::tsleepHandler);
+-    if (_fCommandGate == 0) {
++    if (!HPWifiDiagBool(171, _fCommandGate != nullptr)) {
+         XYLog("No command gate!!\n");
+         super::stop(pciNub);
+         releaseAll();
+@@ -316,8 +320,8 @@ bool AirportItlwm::start(IOService *provider)
+     }
+     _fWorkloop->addEventSource(_fCommandGate);
+     const IONetworkMedium *primaryMedium;
+-    if (!createMediumTables(&primaryMedium) ||
+-        !setCurrentMedium(primaryMedium) || !setSelectedMedium(primaryMedium)) {
++    if (!HPWifiDiagBool(180, createMediumTables(&primaryMedium)) ||
++        !HPWifiDiagBool(181, setCurrentMedium(primaryMedium)) || !HPWifiDiagBool(182, setSelectedMedium(primaryMedium))) {
+         XYLog("setup medium fail\n");
+         releaseAll();
+         return false;
+@@ -336,14 +340,18 @@ bool AirportItlwm::start(IOService *provider)
+         fHalService->get80211Controller()->ic_userflags |= IEEE80211_F_HEON;
+ #endif
+ 
+-    if (!fHalService->attach(pciNub)) {
++    if (!HPWifiDiagBool(200, fHalService->attach(pciNub))) {
+         XYLog("attach fail\n");
+         super::stop(pciNub);
+         releaseAll();
+         return false;
+     }
++    // Non-identifying hardware qualification for this source-built HP target.
++    setProperty("hp-wifi-build", "0.1.4-source-738d4c61");
++    setProperty("hp-wifi-firmware", fHalService->getDriverInfo()->getFirmwareName());
++    setProperty("hp-wifi-transport", "IWX-AX211");
+     fWatchdogWorkLoop = IOWorkLoop::workLoop();
+-    if (fWatchdogWorkLoop == NULL) {
++    if (!HPWifiDiagBool(210, fWatchdogWorkLoop != nullptr)) {
+         XYLog("init watchdog workloop fail\n");
+         fHalService->detach(pciNub);
+         super::stop(pciNub);
+@@ -351,7 +359,7 @@ bool AirportItlwm::start(IOService *provider)
+         return false;
+     }
+     watchdogTimer = IOTimerEventSource::timerEventSource(this, OSMemberFunctionCast(IOTimerEventSource::Action, this, &AirportItlwm::watchdogAction));
+-    if (!watchdogTimer) {
++    if (!HPWifiDiagBool(211, watchdogTimer != nullptr)) {
+         XYLog("init watchdog fail\n");
+         fHalService->detach(pciNub);
+         super::stop(pciNub);
+@@ -361,7 +369,8 @@ bool AirportItlwm::start(IOService *provider)
+     fWatchdogWorkLoop->addEventSource(watchdogTimer);
+     scanSource = IOTimerEventSource::timerEventSource(this, &fakeScanDone);
+ #ifdef AIRPORT_WCL
+-    if (!scanSource || _fWorkloop->addEventSource(scanSource) != kIOReturnSuccess) {
++    if (!HPWifiDiagBool(212, scanSource != nullptr) ||
++        HPWifiDiagResult(213, _fWorkloop->addEventSource(scanSource)) != kIOReturnSuccess) {
+         super::stop(provider);
+         releaseAll();
+         return false;
+@@ -373,7 +382,7 @@ bool AirportItlwm::start(IOService *provider)
+ 
+     fNetIf = new AirportItlwmSkywalkInterface;
+ #ifdef AIRPORT_WCL
+-    if (!fNetIf || !static_cast<AirportItlwmSkywalkInterface *>(fNetIf)->init(this)) {
++    if (!HPWifiDiagBool(300, fNetIf != nullptr) || !HPWifiDiagBool(310, static_cast<AirportItlwmSkywalkInterface *>(fNetIf)->init(this))) {
+ #else
+     if (!fNetIf->init(this)) {
+ #endif
+@@ -393,32 +402,32 @@ bool AirportItlwm::start(IOService *provider)
+         return false;
+     }
+ #endif
+-    if (!fNetIf->attach(this)) {
++    if (!HPWifiDiagBool(400, fNetIf->attach(this))) {
+         XYLog("attach to service fail\n");
+         super::stop(provider);
+         releaseAll();
+         return false;
+     }
+-    if (!attachInterface(fNetIf, this)) {
++    if (!HPWifiDiagBool(410, attachInterface(fNetIf, this))) {
+         XYLog("attach to interface fail\n");
+         super::stop(provider);
+         releaseAll();
+         return false;
+     }
+-    if (!IONetworkController::attachInterface((IONetworkInterface **)&bsdInterface,
++    if (!HPWifiDiagBool(420, IONetworkController::attachInterface((IONetworkInterface **)&bsdInterface,
+ #ifdef AIRPORT_WCL
+                                              false
+ #else
+                                              true
+ #endif
+-                                             )) {
++                                             ))) {
+         XYLog("attach to IONetworkController interface fail\n");
+         super::stop(provider);
+         releaseAll();
+         return false;
+     }
+     memset(&registInfo, 0, sizeof(registInfo));
+-    if (!fNetIf->initRegistrationInfo(&registInfo, 1, sizeof(registInfo))) {
++    if (!HPWifiDiagBool(430, fNetIf->initRegistrationInfo(&registInfo, 1, sizeof(registInfo)))) {
+         XYLog("initRegistrationInfo fail\n");
+         super::stop(provider);
+         releaseAll();
+@@ -427,7 +436,8 @@ bool AirportItlwm::start(IOService *provider)
+ #ifdef AIRPORT_WCL
+     fNetIf->mExpansionData->fRegistrationInfo = (struct IOSkywalkNetworkInterface::RegistrationInfo *)IOMalloc(sizeof(struct IOSkywalkNetworkInterface::RegistrationInfo));
+     fNetIf->mExpansionData2->fRegistrationInfo = (struct IOSkywalkEthernetInterface::RegistrationInfo *)IOMalloc(sizeof(struct IOSkywalkEthernetInterface::RegistrationInfo));
+-    if (!fNetIf->mExpansionData->fRegistrationInfo || !fNetIf->mExpansionData2->fRegistrationInfo) {
++    if (!HPWifiDiagBool(440, fNetIf->mExpansionData->fRegistrationInfo &&
++        fNetIf->mExpansionData2->fRegistrationInfo)) {
+         super::stop(provider);
+         releaseAll();
+         return false;
+@@ -436,7 +446,7 @@ bool AirportItlwm::start(IOService *provider)
+     memcpy(fNetIf->mExpansionData2->fRegistrationInfo, &registInfo, sizeof(registInfo));
+     if (fNetIf->getInterfaceRole() == 1)
+         fNetIf->deferBSDAttach(true);
+-    if (!fNetIf->start(this)) {
++    if (!HPWifiDiagBool(450, fNetIf->start(this))) {
+         super::stop(provider);
+         releaseAll();
+         return false;
+@@ -462,9 +472,13 @@ bool AirportItlwm::start(IOService *provider)
+     if (TAILQ_EMPTY(&fHalService->get80211Controller()->ic_ess))
+         fHalService->get80211Controller()->ic_flags |= IEEE80211_F_AUTO_JOIN;
+ #ifdef AIRPORT_WCL
++    HPWifiDiag(460);
+     bsdInterface->registerService();
++    HPWifiDiag(461);
+ #endif
++    HPWifiDiag(470);
+     registerService();
++    HPWifiDiag(499);
+     return true;
+ }
+ 
+diff --git a/AirportItlwm/AirportItlwmV2.hpp b/AirportItlwm/AirportItlwmV2.hpp
+index 2cc2c69..0ed98ed 100644
+--- a/AirportItlwm/AirportItlwmV2.hpp
++++ b/AirportItlwm/AirportItlwmV2.hpp
+@@ -27,9 +27,7 @@
+ #include <libkern/c++/OSMetaClass.h>
+ #include <IOKit/IOFilterInterruptEventSource.h>
+ 
+-#include "ItlIwm.hpp"
+ #include "ItlIwx.hpp"
+-#include "ItlIwn.hpp"
+ 
+ #include "AirportItlwmEthernetInterface.hpp"
+ 
+diff --git a/AirportItlwm/IOPCIEDeviceWrapper.cpp b/AirportItlwm/IOPCIEDeviceWrapper.cpp
+index ad515a6..8c6f921 100644
+--- a/AirportItlwm/IOPCIEDeviceWrapper.cpp
++++ b/AirportItlwm/IOPCIEDeviceWrapper.cpp
+@@ -1,3 +1,4 @@
++#include "HPWifiDiag.h"
+ //
+ //  IOPCIEDeviceWrapper.cpp
+ //  AirportItlwm-Sonoma
+@@ -9,9 +10,10 @@
+ #include "IOPCIEDeviceWrapper.hpp"
+ #include "Apple80211.h"
+ 
+-#include "ItlIwm.hpp"
+ #include "ItlIwx.hpp"
+-#include "ItlIwn.hpp"
++
++// HP8BDF port: this target owns only the fitted AX211, on Darwin25.
++extern "C" const int version_major;
+ 
+ #define super IOService
+ OSDefineMetaClassAndStructors(IOPCIEDeviceWrapper, IOService);
+@@ -61,24 +63,27 @@ IOService* IOPCIEDeviceWrapper::
+ probe(IOService *provider, SInt32 *score)
+ {
+     XYLog("%s\n", __PRETTY_FUNCTION__);
++    HPWifiDiag(1);
+     bool isMatch = false;
+     super::probe(provider, score);
+-    UInt8 msiCap;
+-    UInt8 msixCap;
++    UInt8 msiCap = 0;
++    UInt8 msixCap = 0;
+     IOPCIDevice* device = OSDynamicCast(IOPCIDevice, provider);
+-    if (!device)
++    if (!HPWifiDiagBool(2, device != nullptr))
++        return NULL;
++    if (version_major != 25 || device->configRead16(0x00) != 0x8086 ||
++        device->configRead16(0x02) != 0x51f1 ||
++        device->configRead16(0x2c) != 0x8086 ||
++        device->configRead16(0x2e) != 0x0094) {
++        HPWifiDiag(3, -1, true);
+         return NULL;
+-    if (ItlIwx::iwx_match(device)) {
+-        isMatch = true;
+-        fHalService = new ItlIwx;
+-    }
+-    if (!isMatch && ItlIwm::iwm_match(device)) {
+-        isMatch = true;
+-        fHalService = new ItlIwm;
+     }
+-    if (!isMatch && ItlIwn::iwn_match(device)) {
++    HPWifiDiag(3);
++    if (HPWifiDiagBool(4, ItlIwx::iwx_match(device))) {
++        fHalService = new ItlIwx;
++        if (!HPWifiDiagBool(5, fHalService != nullptr))
++            return NULL;
+         isMatch = true;
+-        fHalService = new ItlIwn;
+     }
+     if (isMatch) {
+         XYLog("%s Found\n", __FUNCTION__);
+@@ -88,7 +93,7 @@ probe(IOService *provider, SInt32 *score)
+         device->findPCICapability(PCI_CAP_ID_MSI, &msiCap);
+         if (msiCap)
+             pciMsiSetEnable(device, msiCap, 1);
+-        if (!msiCap && !msixCap) {
++        if (!HPWifiDiagBool(6, msiCap || msixCap)) {
+             XYLog("%s No MSI cap\n", __FUNCTION__);
+             fHalService->release();
+             fHalService = NULL;
+@@ -104,8 +109,13 @@ bool IOPCIEDeviceWrapper::
+ start(IOService *provider)
+ {
+     XYLog("%s\n", __PRETTY_FUNCTION__);
++    HPWifiDiagBegin();
+     _fWorkloop = IO80211WorkQueue::workQueue();
+-    if (!super::start(provider)) {
++    if (!HPWifiDiagBool(11, _fWorkloop != nullptr))
++        return false;
++    if (!HPWifiDiagBool(12, super::start(provider))) {
++        _fWorkloop->release();
++        _fWorkloop = NULL;
+         return false;
+     }
+     IOLog("%s::super start succeed\n", getName());
+@@ -115,6 +125,7 @@ start(IOService *provider)
+     registerPowerDriver(this, powerStateArray, 2);
+     provider->joinPMtree(this);
+     registerService();
++    HPWifiDiag(13);
+     return true;
+ }
+ 
+diff --git a/AirportItlwm/WCL/WCL.cpp b/AirportItlwm/WCL/WCL.cpp
+index 7b5ee47..c8b48da 100644
+--- a/AirportItlwm/WCL/WCL.cpp
++++ b/AirportItlwm/WCL/WCL.cpp
+@@ -1,3 +1,4 @@
++#include "HPWifiDiag.h"
+ //
+ //  WCL.cpp
+ //  AirportItlwm
+@@ -78,9 +79,9 @@ IOReturn AirportItlwmSkywalkInterface::wclCountryUpdateGated(
+ bool AirportItlwmSkywalkInterface::initWCL()
+ {
+     joinTimer = IOTimerEventSource::timerEventSource(this, wclJoinTimeout);
+-    if (!joinTimer)
++    if (!HPWifiDiagBool(307, joinTimer != nullptr))
+         return false;
+-    return instance->getWorkQueue()->addEventSource(joinTimer) == kIOReturnSuccess;
++    return HPWifiDiagResult(308, instance->getWorkQueue()->addEventSource(joinTimer)) == kIOReturnSuccess;
+ }
+ 
+ void AirportItlwmSkywalkInterface::stopWCL()
+@@ -146,7 +147,7 @@ IOReturn AirportItlwmSkywalkInterface::updateWCLLinkQualityGated(
+         (ifnet_flags(interface) & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING) &&
+         ic && ic->ic_state == IEEE80211_S_RUN && ic->ic_bss &&
+         IEEE80211_ADDR_EQ(ic->ic_bss->ni_bssid, self->joinBSSID)) {
+-        int rssi = IWM_MIN_DBM + ic->ic_bss->ni_rssi;
++        int rssi = IWX_MIN_DBM + ic->ic_bss->ni_rssi;
+         quality = rssi >= -70 ? 100 : (rssi >= -85 ? 50 : 20);
+     }
+     if (arg1 || quality != self->wclReportedLinkQuality ||
+@@ -325,7 +326,7 @@ void AirportItlwmSkywalkInterface::publishWCLBeacon(const ieee80211_node *node,
+     metadata->ssidLength = node->ni_esslen;
+     memcpy(metadata->ssid, node->ni_essid, node->ni_esslen);
+     memcpy(metadata->bssid, node->ni_bssid, 6);
+-    metadata->rssi = IWM_MIN_DBM + node->ni_rssi;
++    metadata->rssi = IWX_MIN_DBM + node->ni_rssi;
+     metadata->interval = node->ni_intval;
+     metadata->capability = node->ni_capinfo;
+     metadata->flags = AirportWCL::SSIDPresent | AirportWCL::RSSIValid;
+diff --git a/include/HAL/ItlHalService.cpp b/include/HAL/ItlHalService.cpp
+index e3b752f..0d6da7a 100644
+--- a/include/HAL/ItlHalService.cpp
++++ b/include/HAL/ItlHalService.cpp
+@@ -1,3 +1,4 @@
++#include "HPWifiDiag.h"
+ /*
+ * Copyright (C) 2020  钟先耀
+ *
+@@ -113,9 +114,9 @@ free()
+ #ifdef AIRPORT_VTD
+ bool ItlHalService::prepareDma(IOPCIDevice *device, uint8_t addressBits)
+ {
+-    if (dmaArena || !mainWorkLoop || mainWorkLoop->inGate())
++    if (!HPWifiDiagBool(1001, !dmaArena && mainWorkLoop && !mainWorkLoop->inGate()))
+         return false;
+     dmaArena = ItlDmaArena::create(device, controller, addressBits);
+-    return dmaArena != nullptr;
++    return HPWifiDiagBool(1002, dmaArena != nullptr);
+ }
+ #endif
+diff --git a/include/HPWifiDiag.cpp b/include/HPWifiDiag.cpp
+new file mode 100644
+index 0000000..93dd70b
+--- /dev/null
++++ b/include/HPWifiDiag.cpp
+@@ -0,0 +1,256 @@
++#include "HPWifiDiag.h"
++#include <IOKit/IORegistryEntry.h>
++#include <IOKit/IOLib.h>
++
++static volatile uint32_t hpDiagCount;
++static volatile uint32_t hpDiagAttempt;
++static volatile uint32_t hpDiagFailure;
++static volatile uint32_t hpDiagWrapperBegun;
++static volatile uint32_t hpDiagStartupActive = 1;
++static volatile uint32_t hpDiagIRQCounts[HPWifiDiagIRQCount];
++static volatile uint32_t hpDiagIRQCaptured;
++static volatile uint32_t hpDiagDeviceCaptured;
++static volatile uint32_t hpDiagBootStatusCaptured;
++
++static void hpDiagNumber(IORegistryEntry *root, const char *name, uint32_t value)
++{
++    root->setProperty(name, static_cast<unsigned long long>(value), 32);
++}
++
++void HPWifiDiagBegin()
++{
++    bool first = __sync_bool_compare_and_swap(&hpDiagWrapperBegun, 0, 1);
++    IORegistryEntry *root = IORegistryEntry::getRegistryRoot();
++    if (root) {
++        root->setProperty("hp-wifi-diag-build", "0.1.4");
++        // This single-adapter start runs before its controller is published.
++        // Reset exactly once; retain the first error across later attempts.
++        if (first) {
++            hpDiagNumber(root, "hp-wifi-diag-first-failure-result", 0);
++            hpDiagNumber(root, "hp-wifi-diag-first-failure-stage", 0);
++            __sync_lock_test_and_set(&hpDiagFailure, 0);
++        }
++    }
++    HPWifiDiag(10);
++}
++
++void HPWifiDiag(uint32_t stage, int32_t result, bool failure)
++{
++    // Firmware preinit is also used after startup. Do not let a later wake or
++    // association overwrite startup evidence. A controller retry reopens it.
++    if (stage == 100) {
++        __sync_lock_test_and_set(&hpDiagStartupActive, 1);
++        __sync_add_and_fetch(&hpDiagAttempt, 1);
++    }
++    if (!hpDiagStartupActive && stage > 13)
++        return;
++    if (failure || stage == 499 || stage == 900)
++        HPWifiDiagCaptureTrace();
++    uint32_t count = __sync_add_and_fetch(&hpDiagCount, 1);
++    IORegistryEntry *root = IORegistryEntry::getRegistryRoot();
++    if (root) {
++        root->setProperty("hp-wifi-diag-build", "0.1.4");
++        hpDiagNumber(root, "hp-wifi-diag-attempt", hpDiagAttempt);
++        hpDiagNumber(root, "hp-wifi-diag-count", count);
++        if (failure && __sync_bool_compare_and_swap(&hpDiagFailure, 0, 1)) {
++            hpDiagNumber(root, "hp-wifi-diag-first-failure-result", static_cast<uint32_t>(result));
++            hpDiagNumber(root, "hp-wifi-diag-first-failure-stage", stage);
++        }
++        // Stage is the final field written for this progress sample.
++        hpDiagNumber(root, "hp-wifi-diag-result", static_cast<uint32_t>(result));
++        hpDiagNumber(root, "hp-wifi-diag-stage", stage);
++    }
++    // Eight progress lines only: avoid console latency around command ACKs.
++    // All stages and the first failure still update persistent root properties.
++    if (count <= 8)
++        IOLog("HPWiFiDiag stage=%u result=%d\n", stage, result);
++    if (stage == 499 || stage == 900)
++        __sync_lock_test_and_set(&hpDiagStartupActive, 0);
++}
++
++bool HPWifiDiagBool(uint32_t stage, bool result)
++{
++    HPWifiDiag(stage, result ? 0 : -1, !result);
++    return result;
++}
++
++int32_t HPWifiDiagResult(uint32_t stage, int32_t result)
++{
++    HPWifiDiag(stage, result, result != 0);
++    return result;
++}
++
++void HPWifiDiagIRQEvent(HPWifiDiagIRQKind kind)
++{
++    // Called in the hard interrupt filter as well as the threaded handler.
++    // Do not acquire a lock, call IOLog, allocate, or access the registry here.
++    if (static_cast<uint32_t>(kind) >= HPWifiDiagIRQCount ||
++        !__atomic_load_n(&hpDiagStartupActive, __ATOMIC_RELAXED) ||
++        __atomic_load_n(&hpDiagIRQCaptured, __ATOMIC_RELAXED))
++        return;
++    __sync_add_and_fetch(&hpDiagIRQCounts[kind], 1);
++}
++
++void HPWifiDiagCaptureIRQ()
++{
++    if (!__atomic_load_n(&hpDiagStartupActive, __ATOMIC_RELAXED))
++        return;
++    IORegistryEntry *root = IORegistryEntry::getRegistryRoot();
++    if (!root || !__sync_bool_compare_and_swap(&hpDiagIRQCaptured, 0, 1))
++        return;
++    static const char *const names[HPWifiDiagIRQCount] = {
++        "hp-wifi-diag-irq-filter", "hp-wifi-diag-irq-action",
++        "hp-wifi-diag-irq-rx-batch", "hp-wifi-diag-irq-alive",
++        "hp-wifi-diag-irq-pnvm", "hp-wifi-diag-irq-init"
++    };
++    for (uint32_t i = 0; i < HPWifiDiagIRQCount; ++i)
++        hpDiagNumber(root, names[i], __atomic_load_n(&hpDiagIRQCounts[i], __ATOMIC_RELAXED));
++    // A last filter already in flight can race its counter's read. The marker
++    // means all fields were published, not that they form a hardware snapshot.
++    hpDiagNumber(root, "hp-wifi-diag-irq-captured", 1);
++}
++
++static bool hpDiagFirmwareEqual(const char *value, const char *known)
++{
++    if (!value)
++        return false;
++    for (uint32_t i = 0; i < 64; ++i) {
++        if (value[i] != known[i])
++            return false;
++        if (!known[i])
++            return true;
++    }
++    return false;
++}
++
++void HPWifiDiagDevice(const char *firmware, uint32_t hardware, uint32_t radio)
++{
++    if (!__atomic_load_n(&hpDiagStartupActive, __ATOMIC_RELAXED))
++        return;
++    IORegistryEntry *root = IORegistryEntry::getRegistryRoot();
++    if (!root || !__sync_bool_compare_and_swap(&hpDiagDeviceCaptured, 0, 1))
++        return;
++    // Publish a known literal only, never an arbitrary caller-provided string.
++    // This set is the exact twelve-file pinned build/manifest.json selection.
++    static const char *const firmwareNames[] = {
++        "iwlwifi-Qu-b0-hr-b0-68.ucode", "iwlwifi-Qu-b0-jf-b0-68.ucode",
++        "iwlwifi-Qu-c0-hr-b0-68.ucode", "iwlwifi-Qu-c0-jf-b0-68.ucode",
++        "iwlwifi-QuZ-a0-hr-b0-68.ucode", "iwlwifi-QuZ-a0-jf-b0-68.ucode",
++        "iwlwifi-cc-a0-68.ucode", "iwlwifi-so-a0-gf-a0-68.ucode",
++        "iwlwifi-so-a0-gf4-a0-68.ucode", "iwlwifi-so-a0-hr-b0-68.ucode",
++        "iwlwifi-so-a0-jf-b0-68.ucode", "iwlwifi-ty-a0-gf-a0-68.ucode"
++    };
++    for (uint32_t i = 0; i < sizeof(firmwareNames) / sizeof(firmwareNames[0]); ++i) {
++        if (hpDiagFirmwareEqual(firmware, firmwareNames[i])) {
++            root->setProperty("hp-wifi-diag-firmware", firmwareNames[i]);
++            break;
++        }
++    }
++    hpDiagNumber(root, "hp-wifi-diag-hw-rev", hardware);
++    hpDiagNumber(root, "hp-wifi-diag-rf-id", radio);
++    hpDiagNumber(root, "hp-wifi-diag-device-captured", 1);
++}
++
++void HPWifiDiagBootStatus(uint32_t cpu1, uint32_t cpu2, uint32_t umac, uint32_t lmac)
++{
++    if (!__atomic_load_n(&hpDiagStartupActive, __ATOMIC_RELAXED))
++        return;
++    IORegistryEntry *root = IORegistryEntry::getRegistryRoot();
++    if (!root || !__sync_bool_compare_and_swap(&hpDiagBootStatusCaptured, 0, 1))
++        return;
++    hpDiagNumber(root, "hp-wifi-diag-secboot-cpu1", cpu1);
++    hpDiagNumber(root, "hp-wifi-diag-secboot-cpu2", cpu2);
++    hpDiagNumber(root, "hp-wifi-diag-umac-pc", umac);
++    hpDiagNumber(root, "hp-wifi-diag-lmac-pc", lmac);
++    hpDiagNumber(root, "hp-wifi-diag-secboot-captured", 1);
++}
++
++// Storage is fixed for the module lifetime; slots are never reused. A producer
++// owns one slot, writes all six words, then publishes ready with release order.
++// No allocation, locks, IOLog, registry access, or MMIO occurs in append.
++static const uint32_t hpDiagTraceCapacity = 64;
++struct HPWifiTraceSlot {
++    uint32_t words[6];
++    volatile uint32_t ready;
++};
++static HPWifiTraceSlot hpDiagTraceSlots[hpDiagTraceCapacity];
++static uint32_t hpDiagTraceSnapshot[hpDiagTraceCapacity][6];
++static volatile uint32_t hpDiagTraceReserved;
++static volatile uint32_t hpDiagTraceDropped;
++static volatile uint32_t hpDiagTraceFrozen;
++static volatile uint32_t hpDiagTraceCommands;
++
++bool HPWifiDiagCommandBegin()
++{
++    if (!__atomic_load_n(&hpDiagStartupActive, __ATOMIC_RELAXED) ||
++        __atomic_load_n(&hpDiagTraceFrozen, __ATOMIC_RELAXED))
++        return false;
++    uint32_t count = __atomic_load_n(&hpDiagTraceCommands, __ATOMIC_RELAXED);
++    while (count < 2) {
++        if (__atomic_compare_exchange_n(&hpDiagTraceCommands, &count, count + 1,
++                                        false, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
++            return true;
++    }
++    return false;
++}
++
++void HPWifiDiagTrace(HPWifiDiagTraceKind kind, uint32_t a, uint32_t b, uint32_t c, uint32_t d)
++{
++    if (static_cast<uint32_t>(kind) == 0 ||
++        static_cast<uint32_t>(kind) >= HPWifiTraceKindLimit ||
++        !__atomic_load_n(&hpDiagStartupActive, __ATOMIC_RELAXED) ||
++        __atomic_load_n(&hpDiagTraceFrozen, __ATOMIC_RELAXED))
++        return;
++    uint32_t slot = __atomic_load_n(&hpDiagTraceReserved, __ATOMIC_RELAXED);
++    for (;;) {
++        if (slot >= hpDiagTraceCapacity) {
++            uint32_t dropped = __atomic_load_n(&hpDiagTraceDropped, __ATOMIC_RELAXED);
++            while (dropped != UINT32_MAX &&
++                   !__atomic_compare_exchange_n(&hpDiagTraceDropped, &dropped, dropped + 1,
++                                                false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {}
++            return;
++        }
++        if (__atomic_compare_exchange_n(&hpDiagTraceReserved, &slot, slot + 1,
++                                        false, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
++            break;
++    }
++    HPWifiTraceSlot *record = &hpDiagTraceSlots[slot];
++    record->words[0] = slot;
++    record->words[1] = static_cast<uint32_t>(kind);
++    record->words[2] = a;
++    record->words[3] = b;
++    record->words[4] = c;
++    record->words[5] = d;
++    __atomic_store_n(&record->ready, 1, __ATOMIC_RELEASE);
++}
++
++void HPWifiDiagCaptureTrace()
++{
++    if (!__atomic_load_n(&hpDiagStartupActive, __ATOMIC_RELAXED))
++        return;
++    IORegistryEntry *root = IORegistryEntry::getRegistryRoot();
++    if (!root || !__sync_bool_compare_and_swap(&hpDiagTraceFrozen, 0, 1))
++        return;
++    uint32_t count = 0;
++    uint32_t reserved = __atomic_load_n(&hpDiagTraceReserved, __ATOMIC_RELAXED);
++    // Reserved is bounded by the CAS loop. An in-flight producer may complete
++    // after its slot is inspected; omit it rather than copying a partial tuple.
++    for (uint32_t i = 0; i < reserved; ++i) {
++        if (!__atomic_load_n(&hpDiagTraceSlots[i].ready, __ATOMIC_ACQUIRE))
++            continue;
++        for (uint32_t j = 0; j < 6; ++j)
++            hpDiagTraceSnapshot[count][j] = hpDiagTraceSlots[i].words[j];
++        ++count;
++    }
++    // Target is pinned x86_64: native uint32 words serialize little-endian.
++    // IORegistry copies the fixed CPU buffer; this runs outside IRQ context.
++    bool ok = root->setProperty("hp-wifi-diag-trace-data", hpDiagTraceSnapshot,
++                                count * sizeof(hpDiagTraceSnapshot[0]));
++    ok = root->setProperty("hp-wifi-diag-trace-version", 1ULL, 32) && ok;
++    ok = root->setProperty("hp-wifi-diag-trace-count", static_cast<unsigned long long>(count), 32) && ok;
++    ok = root->setProperty("hp-wifi-diag-trace-dropped", static_cast<unsigned long long>(
++        __atomic_load_n(&hpDiagTraceDropped, __ATOMIC_RELAXED)), 32) && ok;
++    ok = root->setProperty("hp-wifi-diag-trace-incomplete", static_cast<unsigned long long>(reserved - count), 32) && ok;
++    if (ok)
++        hpDiagNumber(root, "hp-wifi-diag-trace-captured", 1);
++}
+diff --git a/include/HPWifiDiag.h b/include/HPWifiDiag.h
+new file mode 100644
+index 0000000..0690c7e
+--- /dev/null
++++ b/include/HPWifiDiag.h
+@@ -0,0 +1,60 @@
++#ifndef HP_WIFI_DIAG_H
++#define HP_WIFI_DIAG_H
++#include <stdint.h>
++// Fixed numeric startup diagnostics; never pass identifying/network data.
++void HPWifiDiagBegin();
++void HPWifiDiag(uint32_t stage, int32_t result = 0, bool failure = false);
++bool HPWifiDiagBool(uint32_t stage, bool result);
++int32_t HPWifiDiagResult(uint32_t stage, int32_t result);
++
++// IRQ-context entry: fixed counter only, no logging, allocation or registry use.
++enum HPWifiDiagIRQKind : uint32_t {
++    HPWifiDiagIRQFilter = 0,
++    HPWifiDiagIRQAction,
++    HPWifiDiagIRQRxBatch,
++    HPWifiDiagIRQAliveNotification,
++    HPWifiDiagIRQPnvmNotification,
++    HPWifiDiagIRQInitNotification,
++    HPWifiDiagIRQCount
++};
++void HPWifiDiagIRQEvent(HPWifiDiagIRQKind kind);
++// Only call these from safe startup/command-gated context, never an IRQ filter.
++// The first IRQ snapshot is retained; a concurrently finishing filter may fall
++// on either side of its individual atomic read. No transactional count claim.
++void HPWifiDiagCaptureIRQ();
++void HPWifiDiagDevice(const char *firmware, uint32_t hardware, uint32_t radio);
++void HPWifiDiagBootStatus(uint32_t cpu1, uint32_t cpu2, uint32_t umac, uint32_t lmac);
++
++// Fixed, non-identifying startup command/IRQ trace. Numeric CPU state only.
++enum HPWifiDiagTraceKind : uint32_t {
++    HPWifiTraceCommandStart = 1,
++    HPWifiTraceCommandSubmit = 2,
++    HPWifiTraceCommandDescriptor = 3,
++    HPWifiTraceCommandDoorbell = 4,
++    HPWifiTraceWaitEnter = 5,
++    HPWifiTraceWaitReturn = 6,
++    HPWifiTraceCommandReturn = 7,
++    HPWifiTraceCommandAbort = 8,
++    HPWifiTraceCompletionSeen = 9,
++    HPWifiTraceCompletionPending = 10,
++    HPWifiTraceCompletionDone = 11,
++    HPWifiTraceIRQ_ICT = 12,
++    HPWifiTraceIRQ_CSR = 13,
++    HPWifiTraceIRQ_ICT_EMPTY = 14,
++    HPWifiTraceIRQ_CSR_UNAVAILABLE = 15,
++    HPWifiTraceIRQ_MSIX_RAW = 16,
++    HPWifiTraceRxBatch = 17,
++    HPWifiTraceRxHeader = 18,
++    HPWifiTraceRxBadHeader = 19,
++    HPWifiTraceRxEnd = 20,
++    HPWifiTraceLmacError = 21,
++    HPWifiTraceUmacError = 22,
++    HPWifiTraceIRQExit = 23,
++    HPWifiTraceRxDmaReadFailure = 24,
++    HPWifiTraceKindLimit = 25
++};
++bool HPWifiDiagCommandBegin();
++void HPWifiDiagTrace(HPWifiDiagTraceKind kind, uint32_t a, uint32_t b, uint32_t c, uint32_t d);
++// Safe startup context only. Freeze once, omit uncommitted slots, marker last.
++void HPWifiDiagCaptureTrace();
++#endif
+diff --git a/itl80211/ItlDma.cpp b/itl80211/ItlDma.cpp
+index 37e0a2f..2a35d4c 100644
+--- a/itl80211/ItlDma.cpp
++++ b/itl80211/ItlDma.cpp
+@@ -1,3 +1,4 @@
++#include "HPWifiDiag.h"
+ //
+ //  ItlDma.cpp
+ //  AirportItlwm
+@@ -13,9 +14,9 @@
+ ItlDmaArena *ItlDmaArena::create(IOPCIDevice *device, IOService *owner, uint8_t bits)
+ {
+     auto arena = new ItlDmaArena();
+-    if (!arena)
++    if (!HPWifiDiagBool(1010, arena != nullptr))
+         return nullptr;
+-    if (!arena->initialize(device, owner, bits)) {
++    if (!HPWifiDiagBool(1011, arena->initialize(device, owner, bits))) {
+         arena->destroy();
+         return nullptr;
+     }
+@@ -24,13 +25,13 @@ ItlDmaArena *ItlDmaArena::create(IOPCIDevice *device, IOService *owner, uint8_t
+ 
+ bool ItlDmaArena::initialize(IOPCIDevice *pci, IOService *controller, uint8_t bits)
+ {
+-    if (!pci || !controller || (bits != 36 && bits != 64))
++    if (!HPWifiDiagBool(1020, pci && controller && (bits == 36 || bits == 64)))
+         return false;
+     device = pci;
+     device->retain();
+     owner = controller;
+     owner->setProperty("IOPCIUseDeviceMapper", kOSBooleanTrue);
+-    if (!device->open(owner)) {
++    if (!HPWifiDiagBool(1021, device->open(owner))) {
+         IOLog("AirportItlwm: DMA could not open PCI device\n");
+         return false;
+     }
+@@ -39,6 +40,7 @@ bool ItlDmaArena::initialize(IOPCIDevice *pci, IOService *controller, uint8_t bi
+     const char *mode = "device";
+     if (!mapper) {
+         if (device->getProperty("iommu-parent")) {
++            HPWifiDiag(1022, -1, true);
+             IOLog("AirportItlwm: DMA device mapper unavailable\n");
+             return false;
+         }
+@@ -49,38 +51,41 @@ bool ItlDmaArena::initialize(IOPCIDevice *pci, IOService *controller, uint8_t bi
+         mode = mapper ? "system" : "direct";
+     }
+     lock = IOSimpleLockAlloc();
+-    if (!lock)
++    if (!HPWifiDiagBool(1023, lock != nullptr))
+         return false;
+ 
+     const uint64_t mask = (bits == 64 ? UINT64_MAX : ((1ULL << bits) - 1)) & ~(uint64_t(PageSize) - 1);
+     for (uint32_t i = 0; i < BlockCount; i++) {
+         auto &block = blocks[i];
++        HPWifiDiag(1100 + i * 10);
+         block.memory = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(kernel_task,
+             kIODirectionInOut | kIOMemoryHostPhysicallyContiguous | kIOMemoryMapperNone,
+             BlockSize, mask);
+-        if (!block.memory)
++        if (!HPWifiDiagBool(1101 + i * 10, block.memory != nullptr))
+             return false;
+-        if (block.memory->prepare() != kIOReturnSuccess)
++        if (HPWifiDiagResult(1102 + i * 10, block.memory->prepare()) != kIOReturnSuccess)
+             return false;
+         block.prepared = true;
+         block.command = IODMACommand::withSpecification(kIODMACommandOutputHost64,
+             bits, BlockSize, IODMACommand::kMapped, BlockSize, PageSize, mapper);
+-        if (!block.command || block.command->setMemoryDescriptor(block.memory) != kIOReturnSuccess)
++        if (!HPWifiDiagBool(1103 + i * 10, block.command != nullptr) ||
++            HPWifiDiagResult(1104 + i * 10, block.command->setMemoryDescriptor(block.memory)) != kIOReturnSuccess)
+             return false;
+         IODMACommand::Segment64 segment = {};
+         uint64_t offset = 0;
+         uint32_t count = 1;
+-        if (block.command->gen64IOVMSegments(&offset, &segment, &count) != kIOReturnSuccess ||
++        if (HPWifiDiagResult(1105 + i * 10, block.command->gen64IOVMSegments(&offset, &segment, &count)) != kIOReturnSuccess ||
+             count != 1 || segment.fLength != BlockSize || offset != BlockSize ||
+             (segment.fIOVMAddr & (PageSize - 1)) ||
+             segment.fIOVMAddr > UINT64_MAX - (BlockSize - 1) ||
+             (bits < 64 && ((segment.fIOVMAddr + BlockSize - 1) >> bits))) {
++            HPWifiDiag(1106 + i * 10, -1, true);
+             IOLog("AirportItlwm: DMA arena segment constraints failed at block %u\n", i);
+             return false;
+         }
+         block.address = segment.fIOVMAddr;
+         block.vaddr = block.memory->getBytesNoCopy();
+-        if (!block.vaddr)
++        if (!HPWifiDiagBool(1107 + i * 10, block.vaddr != nullptr))
+             return false;
+     }
+ #if __IO80211_TARGET == __MAC_15_2
+@@ -91,6 +96,7 @@ bool ItlDmaArena::initialize(IOPCIDevice *pci, IOService *controller, uint8_t bi
+     owner->setProperty("ItlwmDMAMapper", mode);
+     owner->setProperty("ItlwmDMAAddressBits", bits, 32);
+     owner->setProperty("ItlwmDMAPoolBytes", BlockCount * BlockSize, 32);
++    HPWifiDiag(1499);
+     IOLog("AirportItlwm: DMA mapper=%s bits=%u pool=%u MiB\n", mode, bits, BlockCount);
+     return true;
+ }
+diff --git a/itl80211/openbsd/sys/_if_ether.h b/itl80211/openbsd/sys/_if_ether.h
+index 9e206eb..8b85858 100644
+--- a/itl80211/openbsd/sys/_if_ether.h
++++ b/itl80211/openbsd/sys/_if_ether.h
+@@ -288,6 +288,7 @@ static inline int
+ ether_ifattach(struct _ifnet *ifp, IOEthernetInterface *iface)
+ {
+     ifp->iface = iface;
++    return 0;
+ }
+ 
+ static inline void
+diff --git a/itlwm/hal_iwx/ItlIwx.cpp b/itlwm/hal_iwx/ItlIwx.cpp
+index 728a508..0938a45 100644
+--- a/itlwm/hal_iwx/ItlIwx.cpp
++++ b/itlwm/hal_iwx/ItlIwx.cpp
+@@ -1,3 +1,4 @@
++#include "HPWifiDiag.h"
+ /*
+  * Copyright (C) 2020  钟先耀
+  *
+@@ -124,6 +125,14 @@
+ #include <sys/pcireg.h>
+ #include <net80211/ieee80211_priv.h>
+ 
++// Capture only from existing gated startup code, never from interrupt context.
++static int32_t hpFirmwareResult(uint32_t stage, int32_t result)
++{
++    if (result)
++        HPWifiDiagCaptureIRQ();
++    return HPWifiDiagResult(stage, result);
++}
++
+ #define super ItlHalService
+ OSDefineMetaClassAndStructors(ItlIwx, ItlHalService)
+ 
+@@ -144,15 +153,16 @@ int iwx_debug = 1;
+ 
+ bool ItlIwx::attach(IOPCIDevice *device)
+ {
++    HPWifiDiag(2000);
+     com.qfullmsk.reset();
+     pci.pa_tag = device;
+     pci.workloop = getMainWorkLoop();
+ #ifdef AIRPORT_VTD
+-    if (!prepareDma(device, 36))
++    if (!HPWifiDiagBool(2001, prepareDma(device, 36)))
+         return false;
+     pci.pa_dmat = dmaArena;
+ #endif
+-    if (!iwx_attach(&com, &pci)) {
++    if (!HPWifiDiagBool(2002, iwx_attach(&com, &pci))) {
+         detach(device);
+         releaseAll();
+         return false;
+@@ -2174,7 +2184,7 @@ out:
+         iwx_nic_unlock(sc);
+     }
+     
+-    err = iwx_wait_notification(sc, &sc->sc_init_complete, IWX_PNVM_COMPLETE, 2000);
++    err = hpFirmwareResult(2240, iwx_wait_notification(sc, &sc->sc_init_complete, IWX_PNVM_COMPLETE, 2000));
+     if (err == ENXIO)
+         return err;
+     
+@@ -4887,15 +4897,15 @@ iwx_load_firmware(struct iwx_softc *sc)
+     
+     fws = &sc->sc_fw.fw_sects[IWX_UCODE_TYPE_REGULAR];
+     if (sc->sc_device_family >= IWX_DEVICE_FAMILY_AX210)
+-        err = iwx_ctxt_info_gen3_init(sc, fws);
++        err = hpFirmwareResult(2230, iwx_ctxt_info_gen3_init(sc, fws));
+     else
+-        err = iwx_ctxt_info_init(sc, fws);
++        err = hpFirmwareResult(2230, iwx_ctxt_info_init(sc, fws));
+     if (err) {
+         XYLog("%s: could not init context info\n", DEVNAME(sc));
+         return err;
+     }
+     
+-    err = iwx_wait_notification(sc, &sc->sc_uc.uc_intr, 1, 1000);
++    err = hpFirmwareResult(2231, iwx_wait_notification(sc, &sc->sc_uc.uc_intr, 1, 1000));
+     if (err == ENXIO)
+         return err;
+     if (!err && !sc->sc_uc.uc_ok)
+@@ -4905,16 +4915,16 @@ iwx_load_firmware(struct iwx_softc *sc)
+         sc->sc_dmat->deferRecycling();
+ #endif
+         if (iwx_nic_lock(sc)) {
+-            XYLog("SecBoot CPU1 Status: 0x%x, CPU2 Status: 0x%x\n",
+-                  iwx_read_umac_prph(sc, IWX_UMAG_SB_CPU_1_STATUS),
+-                  iwx_read_umac_prph(sc, IWX_UMAG_SB_CPU_2_STATUS));
+-            XYLog("UMAC PC: 0x%x\n",
+-                  iwx_read_umac_prph(sc,
+-                                     IWX_UREG_UMAC_CURRENT_PC));
+-            XYLog("LMAC PC: 0x%x\n",
+-                  iwx_read_umac_prph(sc,
+-                                     IWX_UREG_LMAC1_CURRENT_PC));
++            // Retain the same four status reads already made on this path.
++            const uint32_t hpCpu1 = iwx_read_umac_prph(sc, IWX_UMAG_SB_CPU_1_STATUS);
++            const uint32_t hpCpu2 = iwx_read_umac_prph(sc, IWX_UMAG_SB_CPU_2_STATUS);
++            XYLog("SecBoot CPU1 Status: 0x%x, CPU2 Status: 0x%x\n", hpCpu1, hpCpu2);
++            const uint32_t hpUmac = iwx_read_umac_prph(sc, IWX_UREG_UMAC_CURRENT_PC);
++            XYLog("UMAC PC: 0x%x\n", hpUmac);
++            const uint32_t hpLmac = iwx_read_umac_prph(sc, IWX_UREG_LMAC1_CURRENT_PC);
++            XYLog("LMAC PC: 0x%x\n", hpLmac);
+             iwx_nic_unlock(sc);
++            HPWifiDiagBootStatus(hpCpu1, hpCpu2, hpUmac, hpLmac);
+         }
+         iwx_ctxt_info_free_paging(sc);
+         XYLog("%s: could not load firmware\n", DEVNAME(sc));
+@@ -4939,7 +4949,7 @@ iwx_start_fw(struct iwx_softc *sc)
+     XYLog("%s\n", __FUNCTION__);
+     int err;
+     
+-    err = iwx_prepare_card_hw(sc);
++    err = hpFirmwareResult(2220, iwx_prepare_card_hw(sc));
+     if (err) {
+         XYLog("%s: could not initialize hardware\n", DEVNAME(sc));
+         return err;
+@@ -4959,7 +4969,7 @@ iwx_start_fw(struct iwx_softc *sc)
+     /* clear (again), then enable firwmare load interrupt */
+     IWX_WRITE(sc, IWX_CSR_INT, ~0);
+     
+-    err = iwx_nic_init(sc);
++    err = hpFirmwareResult(2221, iwx_nic_init(sc));
+     if (err) {
+         XYLog("%s: unable to init nic\n", DEVNAME(sc));
+         return err;
+@@ -5019,15 +5029,15 @@ iwx_load_ucode_wait_alive(struct iwx_softc *sc)
+     XYLog("%s\n", __FUNCTION__);
+     int err;
+     
+-    err = iwx_read_firmware(sc);
++    err = hpFirmwareResult(2210, iwx_read_firmware(sc));
+     if (err)
+         return err;
+     
+-    err = iwx_start_fw(sc);
++    err = hpFirmwareResult(2211, iwx_start_fw(sc));
+     if (err)
+         return err;
+     
+-    err = iwx_load_pnvm(sc);
++    err = hpFirmwareResult(2212, iwx_load_pnvm(sc));
+     if (err)
+         return err;
+     
+@@ -5053,8 +5063,9 @@ iwx_run_init_mvm_ucode(struct iwx_softc *sc, int readnvm)
+         return EPERM;
+     }
+ 
++    HPWifiDiag(2200);
+     sc->sc_init_complete = 0;
+-    err = iwx_load_ucode_wait_alive(sc);
++    err = hpFirmwareResult(2201, iwx_load_ucode_wait_alive(sc));
+     if (err) {
+         XYLog("%s: failed to load init firmware\n", DEVNAME(sc));
+         return err;
+@@ -5067,23 +5078,23 @@ iwx_run_init_mvm_ucode(struct iwx_softc *sc, int readnvm)
+      * Send init config command to mark that we are sending NVM
+      * access commands
+      */
+-    err = iwx_send_cmd_pdu(sc, IWX_WIDE_ID(IWX_SYSTEM_GROUP,
+-                                           IWX_INIT_EXTENDED_CFG_CMD), IWX_CMD_SEND_IN_RFKILL, sizeof(init_cfg), &init_cfg);
++    err = hpFirmwareResult(2202, iwx_send_cmd_pdu(sc, IWX_WIDE_ID(IWX_SYSTEM_GROUP,
++                                           IWX_INIT_EXTENDED_CFG_CMD), IWX_CMD_SEND_IN_RFKILL, sizeof(init_cfg), &init_cfg));
+     if (err)
+         return err;
+ 
+-    err = iwx_send_cmd_pdu(sc, IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP,
+-                                           IWX_NVM_ACCESS_COMPLETE), IWX_CMD_SEND_IN_RFKILL, sizeof(nvm_complete), &nvm_complete);
++    err = hpFirmwareResult(2203, iwx_send_cmd_pdu(sc, IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP,
++                                           IWX_NVM_ACCESS_COMPLETE), IWX_CMD_SEND_IN_RFKILL, sizeof(nvm_complete), &nvm_complete));
+     if (err)
+         return err;
+ 
+     /* INIT_COMPLETE can arrive before NVM_ACCESS_COMPLETE is acknowledged. */
+-    err = iwx_wait_notification(sc, &sc->sc_init_complete, wait_flags, 2000);
++    err = hpFirmwareResult(2204, iwx_wait_notification(sc, &sc->sc_init_complete, wait_flags, 2000));
+     if (err)
+         return err;
+ 
+     if (readnvm) {
+-        err = iwx_nvm_get(sc);
++        err = hpFirmwareResult(2205, iwx_nvm_get(sc));
+         if (err) {
+             XYLog("%s: failed to read nvm\n", DEVNAME(sc));
+             return err;
+@@ -6515,6 +6526,7 @@ iwx_send_cmd(struct iwx_softc *sc, struct iwx_host_cmd *hcmd)
+     bus_addr_t paddr;
+     uint64_t addr;
+     int err = 0, i, paylen, off;
++    bool hpTraceCommand = false;
+     int idx, code, async, group_id;
+     size_t hdrlen, datasz;
+     uint8_t *data;
+@@ -6546,6 +6558,9 @@ iwx_send_cmd(struct iwx_softc *sc, struct iwx_host_cmd *hcmd)
+         return ENOSPC;
+     if ((hcmd->flags & IWX_CMD_WANT_RESP) && async)
+         return EINVAL;
++    hpTraceCommand = !async && HPWifiDiagCommandBegin();
++    if (hpTraceCommand)
++        HPWifiDiagTrace(HPWifiTraceCommandStart, code, idx, hcmd->flags, ring->queued);
+     
+     for (i = 0, paylen = 0; i < nitems(hcmd->len); i++) {
+         paylen += hcmd->len[i];
+@@ -6679,14 +6694,26 @@ iwx_send_cmd(struct iwx_softc *sc, struct iwx_host_cmd *hcmd)
+         txdata->flags |= IWX_TXDATA_FLAG_CMD_WAITING;
+     ring->queued++;
+     ring->cur = (ring->cur + 1) % getTxQueueSize();
++    if (hpTraceCommand) {
++        HPWifiDiagTrace(HPWifiTraceCommandSubmit, code, idx, txdata->flags, ring->queued);
++        HPWifiDiagTrace(HPWifiTraceCommandDescriptor, idx, hdrlen + paylen, le16toh(desc->num_tbs), ring->cur);
++    }
+     IWX_WRITE(sc, IWX_HBUS_TARG_WRPTR, ring->qid << 16 | ring->cur);
++    if (hpTraceCommand)
++        HPWifiDiagTrace(HPWifiTraceCommandDoorbell, code, idx, ring->cur, ring->queued);
+     
+     if (!async) {
+         clock_interval_to_deadline(1, kSecondScale,
+             reinterpret_cast<uint64_t *>(&deadline));
+         while (generation == sc->sc_generation &&
+             (txdata->flags & IWX_TXDATA_FLAG_CMD_PENDING)) {
++            if (hpTraceCommand)
++                HPWifiDiagTrace(HPWifiTraceWaitEnter, code, idx, txdata->flags, ring->queued);
+             int result = getMainCommandGate()->commandSleep(desc, deadline, THREAD_UNINT);
++            // Do not dereference the old slot after a sleep until the existing
++            // generation/epoch guards pass; reset may have freed its storage.
++            if (hpTraceCommand)
++                HPWifiDiagTrace(HPWifiTraceWaitReturn, code, idx, result, 0);
+             if (result != THREAD_AWAKENED) {
+                 if (txdata->flags & IWX_TXDATA_FLAG_CMD_PENDING)
+                     err = (result == THREAD_TIMED_OUT) ? EWOULDBLOCK : EINTR;
+@@ -6695,11 +6722,17 @@ iwx_send_cmd(struct iwx_softc *sc, struct iwx_host_cmd *hcmd)
+         }
+         /* Reset owns the old buffers, including after a timed-out sleep. */
+ #ifdef AIRPORT_VTD
+-        if (epoch != dmaEpoch)
++        if (epoch != dmaEpoch) {
++            if (hpTraceCommand)
++                HPWifiDiagTrace(HPWifiTraceCommandAbort, code, idx, ENXIO, 1);
+             return ENXIO;
++        }
+ #endif
+-        if (generation != sc->sc_generation)
++        if (generation != sc->sc_generation) {
++            if (hpTraceCommand)
++                HPWifiDiagTrace(HPWifiTraceCommandAbort, code, idx, ENXIO, 2);
+             return ENXIO;
++        }
+         txdata->flags &= ~IWX_TXDATA_FLAG_CMD_WAITING;
+         if (!err) {
+             hcmd->resp_pkt = (struct iwx_rx_packet *)sc->sc_cmd_resp_pkt[idx];
+@@ -6708,6 +6741,8 @@ iwx_send_cmd(struct iwx_softc *sc, struct iwx_host_cmd *hcmd)
+         }
+     }
+ out:
++    if (hpTraceCommand)
++        HPWifiDiagTrace(HPWifiTraceCommandReturn, code, idx, err, txdata->flags);
+     if (err) {
+         ::free(sc->sc_cmd_resp_pkt[idx]);
+         sc->sc_cmd_resp_pkt[idx] = NULL;
+@@ -6791,11 +6826,13 @@ iwx_cmd_done(struct iwx_softc *sc, int qid, int idx, int code)
+     struct iwx_tx_ring *ring = &sc->txq[IWX_DQA_CMD_QUEUE];
+     struct iwx_tx_data *data;
+     
++    HPWifiDiagTrace(HPWifiTraceCompletionSeen, code, qid, idx, ring->queued);
+     if (qid != IWX_DQA_CMD_QUEUE || idx < 0 || idx >= ring->ring_count) {
+         return;    /* Not a command ack. */
+     }
+     
+     data = &ring->data[idx];
++    HPWifiDiagTrace(HPWifiTraceCompletionPending, code, idx, data->flags, ring->queued);
+     if (!(data->flags & IWX_TXDATA_FLAG_CMD_PENDING))
+         return;
+     data->flags &= ~IWX_TXDATA_FLAG_CMD_PENDING;
+@@ -6815,6 +6852,7 @@ iwx_cmd_done(struct iwx_softc *sc, int qid, int idx, int code)
+                  DEVNAME(sc), code));
+     } else if (ring->queued > 0)
+         ring->queued--;
++    HPWifiDiagTrace(HPWifiTraceCompletionDone, code, idx, data->flags, ring->queued);
+ }
+ 
+ uint32_t ItlIwx::
+@@ -11197,6 +11235,7 @@ iwx_nic_umac_error(struct iwx_softc *sc)
+         XYLog("%s: reading errlog failed\n", DEVNAME(sc));
+         return;
+     }
++    HPWifiDiagTrace(HPWifiTraceUmacError, table.valid, table.error_id, 0, 0);
+     
+     if (ERROR_START_OFFSET <= table.valid * ERROR_ELEM_SIZE) {
+         XYLog("%s: Start UMAC Error Log Dump:\n", DEVNAME(sc));
+@@ -11290,6 +11329,7 @@ iwx_nic_error(struct iwx_softc *sc)
+         XYLog("%s: reading errlog failed\n", DEVNAME(sc));
+         return;
+     }
++    HPWifiDiagTrace(HPWifiTraceLmacError, table.valid, table.error_id, 0, 0);
+     
+     if (!table.valid) {
+         XYLog("%s: errlog not found, skipping\n", DEVNAME(sc));
+@@ -11404,6 +11444,7 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
+     //        BUS_DMASYNC_POSTREAD);
+     
+     if (!bus_dmamap_read(data->map, data->m, IWX_RBUF_SIZE)) {
++        HPWifiDiagTrace(HPWifiTraceRxDmaReadFailure, sc->rxq.cur, 0, 0, 0);
+         ifp->netStat->inputErrors++;
+         return;
+     }
+@@ -11418,8 +11459,10 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
+         
+         DPRINTFN(3, ("%s gid=%d cmd=%d code=0x%02x qid=%d idx=%d packet_len=%d payload_len=%d\n", __FUNCTION__, pkt->hdr.group_id, pkt->hdr.cmd, code, qid, idx, iwx_rx_packet_len(pkt), iwx_rx_packet_payload_len(pkt)));
+         
+-        if (!iwx_rx_pkt_valid(pkt))
++        if (!iwx_rx_pkt_valid(pkt)) {
++            HPWifiDiagTrace(HPWifiTraceRxBadHeader, code, (uint32_t(qid) << 16) | uint32_t(idx), 0, 1);
+             break;
++        }
+         
+         /*
+          * XXX Intel inside (tm)
+@@ -11436,8 +11479,10 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
+         }
+         
+         len = sizeof(pkt->len_n_flags) + iwx_rx_packet_len(pkt);
+-        if (len < minsz || len > (IWX_RBUF_SIZE - offset))
++        if (len < minsz || len > (IWX_RBUF_SIZE - offset)) {
++            HPWifiDiagTrace(HPWifiTraceRxBadHeader, code, (uint32_t(qid) << 16) | uint32_t(idx), len, 2);
+             break;
++        }
+         
+         if (code == IWX_REPLY_RX_MPDU_CMD && ++nmpdu == 1) {
+             /* Take mbuf m0 off the RX ring. */
+@@ -11500,6 +11545,7 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
+                 break;
+                 
+             case IWX_ALIVE: {
++                HPWifiDiagIRQEvent(HPWifiDiagIRQAliveNotification);
+                 struct iwx_alive_resp_v4 *resp4;
+                 struct iwx_alive_resp_v5 *resp5;
+                 
+@@ -11635,6 +11681,7 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
+             }
+                 
+             case IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_PNVM_INIT_COMPLETE_NTFY):
++                HPWifiDiagIRQEvent(HPWifiDiagIRQPnvmNotification);
+                 sc->sc_init_complete |= IWX_PNVM_COMPLETE;
+                 getMainCommandGate()->commandWakeup(&sc->sc_init_complete);
+                 struct iwl_pnvm_init_complete_ntfy *pnvm_ntf;
+@@ -11643,6 +11690,7 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
+                 break;
+                 
+             case IWX_INIT_COMPLETE_NOTIF:
++                HPWifiDiagIRQEvent(HPWifiDiagIRQInitNotification);
+                 sc->sc_init_complete |= IWX_INIT_COMPLETE;
+                 getMainCommandGate()->commandWakeup(&sc->sc_init_complete);
+                 break;
+@@ -11811,6 +11859,7 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
+          * For example, uCode issues IWX_REPLY_RX when it sends a
+          * received frame to the driver.
+          */
++        HPWifiDiagTrace(HPWifiTraceRxHeader, code, (uint32_t(qid) << 16) | uint32_t(idx), len, handled);
+         if (handled && !(qid & (1 << 7))) {
+             iwx_cmd_done(sc, qid, idx, code);
+         }
+@@ -11828,6 +11877,7 @@ iwx_rx_pkt(struct iwx_softc *sc, struct iwx_rx_data *data, struct mbuf_list *ml)
+ void ItlIwx::
+ iwx_notif_intr(struct iwx_softc *sc)
+ {
++    HPWifiDiagIRQEvent(HPWifiDiagIRQRxBatch);
+     struct mbuf_list ml = MBUF_LIST_INITIALIZER();
+     uint16_t hw;
+     
+@@ -11839,12 +11889,14 @@ iwx_notif_intr(struct iwx_softc *sc)
+     else
+         hw = le16toh(((struct iwx_rb_status *)sc->rxq.stat)->closed_rb_num) & 0xfff;
+     hw &= (IWX_RX_MQ_RING_COUNT - 1);
++    HPWifiDiagTrace(HPWifiTraceRxBatch, hw, sc->rxq.cur, 0, 0);
+     DPRINTFN(3, ("%s hw=%d\n", __FUNCTION__, hw));
+     while (sc->rxq.cur != hw) {
+         struct iwx_rx_data *data = &sc->rxq.data[sc->rxq.cur];
+         iwx_rx_pkt(sc, data, &ml);
+         sc->rxq.cur = (sc->rxq.cur + 1) % IWX_RX_MQ_RING_COUNT;
+     }
++    HPWifiDiagTrace(HPWifiTraceRxEnd, hw, sc->rxq.cur, 0, 0);
+     if_input(&sc->sc_ic.ic_if, &ml);
+     
+     /*
+@@ -11858,6 +11910,7 @@ iwx_notif_intr(struct iwx_softc *sc)
+ int ItlIwx::
+ iwx_intr(OSObject *object, IOInterruptEventSource* sender, int count)
+ {
++    HPWifiDiagIRQEvent(HPWifiDiagIRQAction);
+ //    XYLog("Interrupt!!!\n");
+     ItlIwx *that = (ItlIwx*)object;
+     struct iwx_softc *sc = &that->com;
+@@ -11871,8 +11924,10 @@ iwx_intr(OSObject *object, IOInterruptEventSource* sender, int count)
+         int tmp;
+         
+         tmp = htole32(ict[sc->ict_cur]);
+-        if (!tmp)
++        if (!tmp) {
++            HPWifiDiagTrace(HPWifiTraceIRQ_ICT_EMPTY, 0, 0, sc->sc_intmask, sc->ict_cur);
+             goto out_ena;
++        }
+         
+         /*
+          * ok, there was something.  keep plowing until we have all.
+@@ -11893,11 +11948,15 @@ iwx_intr(OSObject *object, IOInterruptEventSource* sender, int count)
+         if (r1 & 0xc0000)
+             r1 |= 0x8000;
+         r1 = (0xff & r1) | ((0xff00 & r1) << 16);
++        HPWifiDiagTrace(HPWifiTraceIRQ_ICT, r1, r2, sc->sc_intmask, sc->ict_cur);
+     } else {
+         r1 = IWX_READ(sc, IWX_CSR_INT);
+-        if (r1 == 0xffffffff || (r1 & 0xfffffff0) == 0xa5a5a5a0)
++        if (r1 == 0xffffffff || (r1 & 0xfffffff0) == 0xa5a5a5a0) {
++            HPWifiDiagTrace(HPWifiTraceIRQ_CSR_UNAVAILABLE, r1, 0, sc->sc_intmask, sc->sc_flags);
+             goto out;
++        }
+         r2 = IWX_READ(sc, IWX_CSR_FH_INT_STATUS);
++        HPWifiDiagTrace(HPWifiTraceIRQ_CSR, r1, r2, sc->sc_intmask, sc->sc_flags);
+     }
+     if (r1 == 0 && r2 == 0) {
+         goto out_ena;
+@@ -12005,12 +12064,14 @@ iwx_intr(OSObject *object, IOInterruptEventSource* sender, int count)
+ out_ena:
+     that->iwx_restore_interrupts(sc);
+ out:
++    HPWifiDiagTrace(HPWifiTraceIRQExit, rv, handled, sc->sc_flags, 0);
+     return rv;
+ }
+ 
+ int ItlIwx::
+ iwx_intr_msix(OSObject *object, IOInterruptEventSource* sender, int count)
+ {
++    HPWifiDiagIRQEvent(HPWifiDiagIRQAction);
+ //    XYLog("Interrupt!!!\n");
+     ItlIwx *that = (ItlIwx*)object;
+     struct iwx_softc *sc = &that->com;
+@@ -12019,6 +12080,7 @@ iwx_intr_msix(OSObject *object, IOInterruptEventSource* sender, int count)
+     
+     inta_fh = IWX_READ(sc, IWX_CSR_MSIX_FH_INT_CAUSES_AD);
+     inta_hw = IWX_READ(sc, IWX_CSR_MSIX_HW_INT_CAUSES_AD);
++    HPWifiDiagTrace(HPWifiTraceIRQ_MSIX_RAW, inta_fh, inta_hw, sc->sc_fh_mask, sc->sc_hw_mask);
+     IWX_WRITE(sc, IWX_CSR_MSIX_FH_INT_CAUSES_AD, inta_fh);
+     IWX_WRITE(sc, IWX_CSR_MSIX_HW_INT_CAUSES_AD, inta_hw);
+     inta_fh &= sc->sc_fh_mask;
+@@ -13310,10 +13372,12 @@ iwx_preinit(struct iwx_softc *sc)
+ 
+     struct ieee80211com *ic = &sc->sc_ic;
+     struct _ifnet *ifp = IC2IFP(ic);
++    HPWifiDiag(2100);
++    HPWifiDiagDevice(sc->sc_fwname, sc->sc_hw_rev, sc->sc_hw_rf_id);
+     int err, generation = sc->sc_generation;
+     static int attached;
+     
+-    err = iwx_prepare_card_hw(sc);
++    err = HPWifiDiagResult(2101, iwx_prepare_card_hw(sc));
+     if (err) {
+         XYLog("%s: could not initialize hardware\n", DEVNAME(sc));
+         return err;
+@@ -13326,14 +13390,15 @@ iwx_preinit(struct iwx_softc *sc)
+         return 0;
+     }
+     
+-    err = iwx_start_hw(sc);
++    err = HPWifiDiagResult(2102, iwx_start_hw(sc));
+     if (err) {
+         XYLog("%s: could not initialize hardware\n", DEVNAME(sc));
+         return err;
+     }
+     
+-    err = iwx_run_init_mvm_ucode(sc, 1);
+-    if (generation != sc->sc_generation)
++    err = HPWifiDiagResult(2103, iwx_run_init_mvm_ucode(sc, 1));
++    HPWifiDiagCaptureIRQ();
++    if (!HPWifiDiagBool(2104, generation == sc->sc_generation))
+         return ENXIO;
+     iwx_stop_device(sc);
+     if (err)
+@@ -13384,6 +13449,7 @@ iwx_attach_hook(struct device *self)
+ bool ItlIwx::
+ intrFilter(OSObject *object, IOFilterInterruptEventSource *src)
+ {
++    HPWifiDiagIRQEvent(HPWifiDiagIRQFilter);
+     ItlIwx *that = (ItlIwx*)object;
+     IWX_WRITE(&that->com, IWX_CSR_INT_MASK, 0);
+     return true;

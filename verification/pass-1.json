@@ -1,0 +1,24 @@
+{
+  "scope": "Packaging/source validation; macOS rebuilds only, no hardware installation or new sleep/unlock test",
+  "checks": {
+    "gpu_rebuilt_and_signed": true,
+    "gpu_x86_64_kext": true,
+    "wifi_rebuilt_and_signed": true,
+    "wifi_x86_64_kext": true,
+    "battery_rebuilt_and_signed": true,
+    "battery_x86_64_kext": true,
+    "gpu_source_equals_qualified_baseline": true,
+    "wifi_overlay_equals_qualified_baseline": true,
+    "battery_runtime_source_unchanged": true,
+    "cpu_original_early_cfg.c": true,
+    "cpu_original_manage.py": true,
+    "cpu_original_fixture.c": true,
+    "cpu_original_run_vm_test.py": true,
+    "active_config_unchanged": true,
+    "usb_archive_verified": true,
+    "full_project_copy_verified": true,
+    "generated_baseline_matches_original_guard": true,
+    "smbios_identifiers_cleared": true
+  },
+  "passed": true
+}

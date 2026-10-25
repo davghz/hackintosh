@@ -1,0 +1,23 @@
+--- a/src/NootedGreen/kern_gen11.cpp
++++ b/src/NootedGreen/kern_gen11.cpp
+@@ -10808,12 +10808,15 @@
+ }
+ 
+ static inline bool xeEngIdle(uint32_t base) {
+-	// RING_MI_MODE bit 9 = MODE_IDLE. 0 = engine fused off / powered down (also idle).
+-	// never let readReg32 fall into its index/data (write) path: only read inside the mapped BAR
++	// RING_MI_MODE bit 9 = MODE_IDLE. Preserve the existing zero-value idle policy.
++	// An all-ones read is inaccessible/unknown, never proof that releasing a hold is safe.
++	// Backport the jkbuha RPL recovery guard without changing HP forcewake policy.
+ 	auto *cb = NGreen::callback;
+-	if (base + 0xa0 > cb->mmioLength()) return false;  // outside the BAR / unmapped -> treat as busy (never drop)
+-	uint32_t m = cb->readReg32(base + 0x9c);
+-	return m == 0 || m == 0xffffffff || (m & 0x200);
++	if (!cb || (base & 3u)) return false;
++	const uint64_t reg = static_cast<uint64_t>(base) + 0x9cu;
++	if (reg > 0xfffffffcu || reg + sizeof(uint32_t) > cb->mmioLength()) return false;
++	uint32_t m = cb->readReg32(static_cast<uint32_t>(reg));
++	return m != 0xffffffffu && (m == 0 || (m & 0x200u));
+ }
+ 
+ static void xeFwIdleWorker(thread_call_param_t, thread_call_param_t) {
