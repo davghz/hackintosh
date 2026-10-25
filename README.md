@@ -2,7 +2,7 @@
 
 Experimental macOS support for one **HP Envy x360 15-fe0xxx, board 8BDF,
 BIOS F.03, Intel Core i7-1355U**. This repository collects the source changes
-developed and tested on that machine, including Iris Xe graphics, native-menu
+developed and tested on that machine, including Iris Xe graphics, native 
 AX211 Wi-Fi, battery reporting, and a one-shot CPU CFG Lock utility.
 
 The recorded macOS baseline is **Tahoe 26.7.1 / 25G241**, Darwin 25.6.0,
