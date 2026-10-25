@@ -13,6 +13,9 @@ signatures. Similar model names do not establish compatibility.
 This is an experimental development snapshot, not a finished daily-use release
 or a complete bootable EFI download.
 
+This is a **free, noncommercial hobbyist project**. There are no paid downloads
+or paid GPU support/services. Contributions and testing reports are welcome.
+
 ## Start here
 
 1. Read [hardware and current status](docs/STATUS.md).
@@ -22,16 +25,26 @@ or a complete bootable EFI download.
 5. For the implementation map, read [architecture](docs/ARCHITECTURE.md).
 6. For attribution and redistribution terms, read [licenses](licenses/README.md).
 
-| Component | Recorded result | Source |
+## What works and what does not
+
+| Component | Status on the original laptop | Details |
 | --- | --- | --- |
-| Iris Xe A7A1, 96 EU, 60 MiB stolen memory | Metal compute/render tests passed; split cursor corrected | [GPU 1.0.12](drivers/graphics/) |
-| Intel AX211, 51F1:0094 | Native Wi-Fi menu discovery and traffic worked | [Wi-Fi 0.1.4](drivers/wifi/) |
-| Battery | Menu and charge reporting worked; kernel AC-policy notification incomplete | [Battery 0.1.2](drivers/battery/) |
-| CPU CFG Lock | MSR 0xE2 bit 15 cleared on all 12 logical CPUs after two reboots | [Unlock source](tools/cpu-unlock/) |
-| Keyboard / trackpad | Basic input works | Existing Voodoo input stack; see configuration |
-| Touchscreen | Controller attached; physical touch remains unverified | [I2C1 resources](drivers/input/) |
-| Speakers, brightness keys, Bluetooth | Unresolved | See [status](docs/STATUS.md) |
-| Full sleep/wake | Can hang and require forced restart; paused | [Deferred work](experiments/README.md) |
+| macOS boot | Works with the recorded USB/OpenCore setup | This repository is not a complete bootable EFI |
+| Iris Xe graphics | Working in bounded tests | Metal compute/render checks passed; split cursor corrected in [GPU 1.0.12](drivers/graphics/) |
+| Intel AX211 Wi-Fi | Working | Native-menu discovery and traffic with [Wi-Fi 0.1.4](drivers/wifi/) |
+| Battery | Partly working | Menu/charge reporting work; kernel AC-policy notification is incomplete in [0.1.2](drivers/battery/) |
+| CPU CFG Lock | Unlock verified | MSR 0xE2 bit 15 cleared on all 12 logical CPUs after two reboots; [guide](docs/CPU-UNLOCK.md) |
+| Keyboard / trackpad | Basic input working | Full gesture coverage has not been qualified |
+| Safari video | Works with a workaround | Original machine uses the BlackHole/Parrot clock workaround; not proof of working speakers |
+| Touchscreen | Unverified | Controller attached; physical touch not qualified; [I2C1 resources](drivers/input/) |
+| Built-in speakers | Not working | Physical speaker output is silent; amplifier initialization remains open |
+| Screen brightness keys | Not working | Backlight/brightness work remains unresolved |
+| Bluetooth | Not qualified | Prototype remains disabled; no working Bluetooth claim |
+| Full sleep/wake | Not working reliably | Can hang and require forced restart; investigation paused |
+| Other hardware / OS builds | Unverified | External displays, DRM, hibernation and other machines/builds are not qualified |
+
+See [STATUS.md](docs/STATUS.md) for the exact hardware, limitations and deferred
+work. Display-off recovery is not evidence that full system sleep works.
 
 These are bounded results from the original laptop, not fresh qualification of
 every rebuild or another machine. GPU support extends the NootedGreen/Iris Xe
@@ -68,3 +81,19 @@ and the [changelog](CHANGELOG.md). Original project code is MIT-licensed.
 Wi-Fi and GPU derivatives keep their upstream terms; the GPU's nonprofit
 restriction means this collection as a whole is not an unrestricted open-source
 release. Read the [license map](licenses/README.md) before reusing a component.
+
+## Optional support for the original tools and documentation
+
+If you want to contribute toward development costs such as compute credits for
+the **original MIT-licensed tools and documentation**, voluntary ETH gifts can
+be sent to the maintainer's Ethereum address:
+
+```text
+0x61bfcf2fa9e7d8cef32c1778444e2a4c5e315b21
+```
+
+These gifts are optional and do not buy access, support, priority or a promised
+fix. This is not a fundraising request for the TSNPL-covered GPU component or
+related support/services, which remain outside this support note under their
+upstream no-revenue terms. An Ethereum transfer does not directly transfer
+provider-specific AI/API credits. See the [support scope](docs/SUPPORT.md).

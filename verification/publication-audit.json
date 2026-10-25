@@ -28,7 +28,13 @@
     "private_data_and_dependencies_excluded": true,
     "unit_tests_10_pass": true,
     "staged_publication_scan_pass": true,
-    "new_documentation_tools_have_no_whitespace_errors": true
+    "new_documentation_tools_have_no_whitespace_errors": true,
+    "requested_address_preserved_exactly": true,
+    "ethereum_address_has_40_hex_digits": true,
+    "donation_scope_excludes_tsnpl_gpu": true,
+    "noncommercial_declaration_documented": true,
+    "post_documentation_unit_tests_pass": true,
+    "post_documentation_publication_scan_pass": true
   },
   "builds": {
     "gpu": {
@@ -61,15 +67,15 @@
   ],
   "relative_link_errors": [],
   "private_match_file_names": [],
-  "source_manifest_sha256": "39ed83e183e6676558621e9115b6eac1eaed99aa05919f74f2c29d2a355f6909",
+  "source_manifest_sha256": "732f62fa12b82f1f03e6c741a38508e6b20ab4390f0e215fade0446304b14870",
   "source_manifest_scope": "All staged files except verification/ reports",
   "source_sha256": {
     ".gitattributes": "71b521ad66f96f24f62b7958315889d088a18f228cb2c2256205cbb66f011709",
     ".gitignore": "f8f29246a0d02e627f7586d6c1f227ea0cb38ada2434d6dd776062c8b0d27501",
-    "CHANGELOG.md": "d08e229268941d0ed3b2ae3137f476a3febfb0c4fa5e916b72218be5a9db9acd",
+    "CHANGELOG.md": "49713d568fe304d8d6b070b6dba1ca4fb7b61647ed9eab8f83a794065845ccf7",
     "CONTRIBUTING.md": "01ef142fc8f873363f4541d343b1a86b0ca6d9bb5877001d91f97f20c9a0f208",
     "LICENSE": "8ba50de72a8038cb0e0726a5ef0a77d08d6f57cf4701a2b8ab6a0c80c71f19c5",
-    "README.md": "942718f45f1f96ff636944dd134c58a7a5551ebec33aa698a11e58640f348098",
+    "README.md": "929a66e13867d80b2d1bbabf33fff1abee278fb17a06d627c4b66ec50066a683",
     "config/components.json": "7c4a81915d5917019620e327273dee05fe34e07eeac8da46588c2eb7408564a4",
     "config/config.example.plist": "066d8ce8efd2866a725d1e3cb3eed61c0d2ef02eb021636ac3de4ac268a8421f",
     "docs/ARCHITECTURE.md": "c5889aaed1c3247940c66a8ba7f127c3c51009c83d3b773e671371b6abd3ee72",
@@ -78,6 +84,7 @@
     "docs/CPU-UNLOCK.md": "94d993c62fe50043074f37d98cd14d5303ac5d151ea005aa1cad406c089e7ef7",
     "docs/PUBLISHING.md": "d8496b1487781ce826b728f9759dc7482ab354edabf561aa95d9ad0bf25ba310",
     "docs/STATUS.md": "a0a1fda8f5ab6fb2c92656a0e320568a02455a59d6996c6cbccecffecc700034",
+    "docs/SUPPORT.md": "973748a9c1d215d707ec1008aab39e832ed3c68740c40be2a32ff74efa038ac4",
     "docs/TROUBLESHOOTING.md": "48c3ba0fc73f9b0a9e613a942f60e123ef04a805a4da7ffe59cc78813a05c9f3",
     "drivers/battery/BatteryModel.hpp": "59e5f0e32b6dcbd3d77430d7551f6eb359eb944c3c614d2b33a73430c4cb57e4",
     "drivers/battery/HPBAT1Bridge.cpp": "8896a687e286cc4779f0cfe51bbc98d7b4183591c2894168152ea2d2698948c8",
@@ -166,7 +173,7 @@
     "experiments/power-policy/ACPowerPolicy.hpp": "45f12cae5fb276cf99ff5e688ca34b4a3a88d9ff2408ebce6753a38d16b3e754",
     "experiments/power-policy/BatteryModel.hpp": "59e5f0e32b6dcbd3d77430d7551f6eb359eb944c3c614d2b33a73430c4cb57e4",
     "experiments/power-policy/HPBAT1Bridge.cpp": "73ad796ab418fa16b3e30f7ad1f781f9fcb9a5435e42589876c4c77969793bd2",
-    "licenses/README.md": "602286f60e3173a2ad20eeb145e81da8947aef222f0e10ba07fe43499812d332",
+    "licenses/README.md": "4acc566b537b083376facabced539ee2509aafbf5b425d482fd9cefec89ee65d",
     "tests/test_baseline.py": "5df84ea9a8d0a9d1a4c6261b9d7b84bb3c05b65e0971bc49f86c68c2e3f406a7",
     "tests/test_public_audit.py": "50b4d4bb7ee236b13bb065c523e58cb56611cfa370091f2f93736988d200acca",
     "tools/audit-public.py": "f8d9a9f2aba0ea542e75d1134b074cc04d6b5f00e1dc4af0b46578ad8ee56be2",
@@ -184,5 +191,7 @@
     "warning_count": 2079,
     "file_count": 20,
     "note": "Original source overlay whitespace and literal patch context retained to preserve qualified bytes; no driver reformatting during publication."
-  }
+  },
+  "final_documentation_update_utc": "2026-10-25T23:22:01.582560+00:00",
+  "publication_declaration": "Maintainer confirmed free, noncommercial hobbyist scope; no paid GPU support/services. Optional ETH note restricted to original MIT tools and documentation."
 }

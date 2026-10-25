@@ -18,6 +18,9 @@ This is a development snapshot, not a binary release or a new hardware validatio
 - Preserves uninstalled power-policy/GPU proposals under `experiments/`.
 - Documents full sleep/wake as unresolved and paused, along with remaining
   audio, brightness, Bluetooth and touchscreen qualification work.
+- Adds the maintainer's noncommercial hobbyist declaration, a prominent
+  working/unresolved status table and optional ETH support scoped to original
+  MIT-licensed tools/documentation, preserving the GPU's separate terms.
 
 The original GPU/Wi-Fi/battery source algorithms are preserved. Packaging and
 read-only verification helpers may evolve independently from deployed drivers.

@@ -7,6 +7,20 @@ this entire mixed-license collection must not be described as wholly
 OSI-open-source. Its original MIT and GPL-covered components are open source.
 See the [Open Source Definition](https://opensource.org/osd) for that distinction.
 
+## Noncommercial declaration and support scope
+
+The maintainer confirms this is a free, noncommercial hobbyist project. For
+the TSNPL-covered GPU work and its derivatives, this project operates on a
+not-for-profit basis and derives no revenue from distribution or related
+support/services. No paid GPU access, support or services are offered.
+The original upstream license is retained without modification.
+
+The optional ETH note applies only to the original MIT-licensed tools and
+documentation, not the TSNPL component or its support/services. This scope
+does not create a donation exception in TSNPL or override its sections 17–18.
+Any funding tied to GPU work requires resolving those terms with its rights
+holders before acceptance. See [SUPPORT.md](../docs/SUPPORT.md).
+
 | Component | Origin / terms |
 | --- | --- |
 | GPU source and HP modifications | NootedGreen by StezzaPilot/sgiammori, extended by JulioNectar's Iris Xe project; see [GPU LICENSE](../drivers/graphics/LICENSE) and [upstream notice](../drivers/graphics/NOTICE.md). The supplied license is Thou Shalt Not Profit License 1.0; it is not MIT. |
