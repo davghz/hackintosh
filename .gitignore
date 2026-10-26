@@ -1,6 +1,7 @@
 # Local material contains credentials and firmware records. NEVER force-add it.
 /private/
 /deps/
+/build/
 .DS_Store
 __pycache__/
 *.pyc

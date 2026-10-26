@@ -10,8 +10,10 @@ with OpenCore 1.0.8. Several patches depend on exact hardware and binary
 signatures. Similar model names do not establish compatibility.
 
 **Full system sleep/wake is broken and development on it is paused.**
-This is an experimental development snapshot, not a finished daily-use release
-or a complete bootable EFI download.
+This is an experimental development snapshot, not a finished daily-use release.
+An [installer builder](docs/INSTALL.md) now assembles a complete Recovery EFI
+and fetches Apple Recovery locally. Its new assembly still needs physical boot
+and clean-install qualification. It is not an instant, fully configured macOS image.
 
 This is a **free, noncommercial hobbyist project**. There are no paid downloads
 or paid GPU support/services. Contributions and testing reports are welcome.
@@ -19,8 +21,10 @@ or paid GPU support/services. Contributions and testing reports are welcome.
 ## Start here
 
 1. Read [hardware and current status](docs/STATUS.md).
-2. For our CPU unlock procedure, read [CPU CFG Lock guide](docs/CPU-UNLOCK.md).
-3. To compile the macOS changes, read [building from source](docs/BUILD.md).
+2. To prepare a new installation, start with the [installer USB guide](docs/INSTALL.md).
+   It includes hardware collection, the [CPU unlock prerequisite](docs/CPU-UNLOCK.md),
+   one-command assembly, Apple Recovery download, USB copying and verification.
+3. To compile the post-install changes, read [building from source](docs/BUILD.md).
 4. Before adapting an EFI, read [configuration and deployment](docs/CONFIGURATION.md).
 5. For the implementation map, read [architecture](docs/ARCHITECTURE.md).
 6. For attribution and redistribution terms, read [licenses](licenses/README.md).
@@ -29,7 +33,7 @@ or paid GPU support/services. Contributions and testing reports are welcome.
 
 | Component | Status on the original laptop | Details |
 | --- | --- | --- |
-| macOS boot | Works with the recorded USB/OpenCore setup | This repository is not a complete bootable EFI |
+| macOS boot | Works with the recorded USB/OpenCore setup | New [installer builder](docs/INSTALL.md) passes assembly checks; fresh physical install pending |
 | Iris Xe graphics | Working in bounded tests | Metal compute/render checks passed; split cursor corrected in [GPU 1.0.12](drivers/graphics/) |
 | Intel AX211 Wi-Fi | Working | Native-menu discovery and traffic with [Wi-Fi 0.1.4](drivers/wifi/) |
 | Battery | Partly working | Menu/charge reporting work; kernel AC-policy notification is incomplete in [0.1.2](drivers/battery/) |
@@ -57,6 +61,7 @@ code, and macOS still needs third-party components.
 docs/                 usage, builds, limitations
 drivers/              tested-version source overlays and build scripts
 tools/cpu-unlock/     constrained HP F.03 one-shot EFI utility and VM fixture
+tools/installer/      guarded Recovery USB assembly and readback tools
 config/               sanitized reference configuration; no bootable EFI
 experiments/          uninstalled proposals; not release fixes
 verification/         preparation and validation reports
@@ -71,8 +76,10 @@ are also ignored. Original development files and the running USB remain separate
 
 No Apple kernel, recovery image, GPU driver bundle, firmware-variable baseline,
 personal SMBIOS identity, or configured Wi-Fi password is included in the
-shareable source set. The build scripts prepare files locally; they do not
-install drivers, rebuild system caches, restart, or put the machine to sleep.
+shareable source set. The installer builder retrieves Apple Recovery directly
+and generates personal files locally. Its copy tool only writes an explicitly
+selected blank external FAT32 volume. Build tools do not install system drivers,
+rebuild system caches, restart, or put the machine to sleep.
 
 ## Contributing and license
 

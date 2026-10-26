@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "recorded_utc": "2026-10-26T00:01:49.744440+00:00",
+  "scope": "Installer preview: source assembly, archive safety, exact firmware patch, file readback; not physical installation qualification",
+  "hardware_input": "Private fixture reconstructed from prior original-HP measurements and its archived original DSDT; Linux collector was not run on hardware during this session",
+  "assembly_passes": [
+    {
+      "name": "local Apple Recovery input",
+      "complete": true
+    },
+    {
+      "name": "fresh network dependencies and Apple Recovery",
+      "complete": true
+    },
+    {
+      "name": "clean public-source ZIP, final code",
+      "complete": true
+    }
+  ],
+  "checks": {
+    "unit_tests": 17,
+    "unit_tests_passed": true,
+    "clean_export_tests_passed": true,
+    "ocvalidate_version": "1.0.8",
+    "ocvalidate_passed": true,
+    "enabled_file_closure_passed": true,
+    "exact_dsdt_result_passed": true,
+    "five_ssdt_aml_bodies_match_working_fallback": true,
+    "input_builds": [
+      "VoodooI2C",
+      "VoodooInput",
+      "VoodooI2CHID"
+    ],
+    "hid_distinct_superclass_termination_imports_present": true,
+    "no_userspace_atexit_imports": true,
+    "apple_signed_chunklist_and_all_image_chunks_verified": true,
+    "fresh_recovery": {
+      "ProductVersion": "26.6.2",
+      "ProductBuildVersion": "25G83"
+    },
+    "boot_payload_files": 86,
+    "temporary_gpt_fat32_disk_image_copy_readback_passed": true,
+    "existing_efi_refused_and_preserved": true,
+    "optimized_python_refused": true,
+    "source_zip_file_bytes_and_executable_modes_verified": true,
+    "both_live_usb_configs_unchanged": true
+  },
+  "not_tested": [
+    "Linux collector execution in a fresh target live session",
+    "Physical boot of rebuilt EFI",
+    "Clean install using rebuilt kit",
+    "Second matching HP",
+    "Automatic post-install GPU deployment"
+  ],
+  "next_gate": "Boot the generated installer on spare media; user currently has no spare USB. Do not erase the working installation or boot USB.",
+  "source_sha256": {
+    "docs/INSTALL.md": "dfe700ba57c3026eab9ac6af32e22e92953401ab56d8cc408d69a90ce62b85cf",
+    "tests/test_installer.py": "2a2e110706f3875dd1a100c18a955a573029d84fcfb7b5cde410fea629a07c9b",
+    "tools/installer/ACPI-PROVENANCE.md": "df6b4e196d8ae0fbbb8b1a697042dbbdd36614b9a48f7e71c86fddd0e5e1b31a",
+    "tools/installer/Prepare Installer.command": "f5d063e40bf76a91b8e61e8ee67ce4c3b3e3deb18c8a4f670b03be87fc8b0a07",
+    "tools/installer/acpi/OpenCore-LICENSE.txt": "4ca709aac88e7b297e794f464d6557203b23a4e92e792b579bb968fef2bce4c4",
+    "tools/installer/acpi/SSDT-AWAC-HP8BDF.dsl": "80e499de4b50c02b6937985f22ae9a6f4844aa42c215f80680b829bdce067c17",
+    "tools/installer/acpi/SSDT-EC-HP8BDF.dsl": "4689ce9ad06ee242f7d1ed3f0f965f4a3e6a998ab3e331ea8b1266c0e37de004",
+    "tools/installer/acpi/SSDT-I2C0-HP8BDF.dsl": "095d558e9f2793957ab12df5545ea5aa0edbed17a2f070bf297d0f411e73bf58",
+    "tools/installer/acpi/SSDT-PLUG-ALT-HP12.dsl": "d2857a0543b9c87e93d5d50fc19b1b76e780e3175211d59b8248e58027d16d2c",
+    "tools/installer/acpi/SSDT-USBX.dsl": "ec2721427602f523983db8983574c0a2e282d3a97560b4f0417b42c721dff1bb",
+    "tools/installer/build_input.py": "95a1d7215b0d94f2fd00d0453fc6b0013fb865a2132cce1adacdb1ece9cb4b4f",
+    "tools/installer/collect-hardware.py": "2507e0f7612dfe831c2163c738b96bd5ec743932f3868ccd9029bf4ff92761b9",
+    "tools/installer/common.py": "d853015c579ecc857ad2d8a18044d98e5950466c277d9f8ad393b5581671fa08",
+    "tools/installer/downloads.json": "aa873c1cb696e08c2847067e43566dc09c6c5a8c9ff855256a04729cae6d5987",
+    "tools/installer/prepare-installer.py": "36a4a7f64e3610c44cacbb8deede1e4df4dd03d02cc7e63ef4ac380edd9cd453",
+    "tools/installer/templates/USBMapHP8BDF.plist": "4dd82a90cb8c56da7e94eab013ebc0e560a43bc3ffc8b4abcd14bc1ae8bbbb21",
+    "tools/installer/templates/VoodooGPIO.plist": "d3fabe71110ac3ac083e485a87acf2c130b4d7988405208023534e90bc0c9003",
+    "tools/installer/templates/VoodooI2C-LICENSE.txt": "8169ac6d6270c2db585ca7cf4ebb3881ebf43a78e7b85a148df724e75ec41d96",
+    "tools/installer/templates/VoodooI2C.plist": "f039c0a552556b3cd142c22f6e1bba8768f274e56ad7abfe4351ca87e91bf789",
+    "tools/installer/templates/VoodooI2CHID.plist": "76c6796d058d5686938eb25810504da6a0cf44ce74a08c4199602c74c72f1b5f",
+    "tools/installer/templates/VoodooInput-LICENSE.txt": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+    "tools/installer/templates/VoodooInput.plist": "901221ce6e6ad9e7ccf5e1021c530517c0a7ff08b8f87e8cd142bf6bcbc0f7e2",
+    "tools/installer/templates/recovery.plist": "cf5198c423c2aa46a8946688368cae0c255fc0f3c803a091e2ae5d631a65145b",
+    "tools/installer/verify-kit.py": "0ba2f1a9602a05b8ffcd0d4e8b79fdbc4b496dbc24e7c98a5ddc48d42a47fc9b"
+  }
+}

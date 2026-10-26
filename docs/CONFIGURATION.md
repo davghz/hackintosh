@@ -1,5 +1,10 @@
 # Configuration and deployment scope
 
+For a new Recovery USB, use [INSTALL.md](INSTALL.md). Its dedicated installer
+template derives from the working unaccelerated fallback and is assembled with
+matching files and a fresh identity. The accelerated reference below serves a
+different, post-install purpose; do not substitute it for the installer profile.
+
 `config/config.example.plist` is the restored working configuration with
 SMBIOS serial, MLB, UUID and ROM removed, and password fields empty. It is a
 reference for this exact hardware. Stale descriptive comments were updated
@@ -20,8 +25,8 @@ Keep a separate verified fallback USB/EFI before testing custom drivers. Do
 not overwrite the only working EFI or disable exact-build guards to force a
 match. Validate with `ocvalidate` from the same OpenCore release.
 
-The repository does not supply a general macOS installer or an automatic
-system-wide graphics deployment command. Building NootedGreenHP alone is
+The guarded builder supplies Recovery assembly for the exact HP, but not an
+automatic system-wide graphics deployment command. Building NootedGreenHP alone is
 insufficient: its matching native graphics bundles, dependencies, cache
 registration and private exact-image checks must be prepared and reviewed
 on the target. Old project `manage_*` scripts in the private archive have

@@ -1,5 +1,19 @@
 # Changelog
 
+## Installer builder preview — 2026-10-25
+
+- Adds exact-target Linux hardware/CFG Lock collection and a macOS Recovery
+  assembler with pinned, checksum-verified downloads and unique SMBIOS identity.
+- Reproduces the qualified firmware-table corrections from the user's own
+  matching DSDT, compiles HP SSDTs and rebuilds Tahoe-compatible input drivers.
+- Downloads and verifies Apple Recovery locally; never redistributes macOS.
+- Adds optional private WPA2 installer configuration, OpenCore validation,
+  complete file manifests and a guarded external-FAT32 copy/readback command.
+- Documents setup, CPU unlock prerequisites, installation stages and recovery.
+- Complete assembly and fresh-download checks pass; temporary-disk copy/readback
+  passes. These are not a new physical boot, clean install or post-install GPU
+  qualification. Full sleep and other known issues remain open.
+
 ## Initial public source snapshot — 2026-10-25
 
 This is a development snapshot, not a binary release or a new hardware validation.

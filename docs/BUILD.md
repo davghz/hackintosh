@@ -1,5 +1,9 @@
 # Build the macOS components
 
+For installer USB assembly, use [INSTALL.md](INSTALL.md). That workflow has
+its own pinned dependencies and builds the Recovery input drivers automatically.
+The commands below build separate post-install components.
+
 Use an Intel Mac/macOS development environment with Python 3.9+, Git and Apple
 Command Line Tools. The recorded compiler was Apple clang 21.0.0. Build outputs
 remain ignored and are never automatically loaded or installed.

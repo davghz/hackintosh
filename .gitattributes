@@ -5,4 +5,5 @@
 *.cpp text eol=lf
 *.hpp text eol=lf
 *.md text eol=lf
+*.command text eol=lf
 *.patch -text

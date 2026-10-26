@@ -1,5 +1,10 @@
 # Hardware and known issues — 2026-10-25
 
+The [installer builder preview](INSTALL.md) passes local assembly and readback
+checks. A fresh physical installation of that generated kit remains untested.
+The working feature results below describe the original laptop's post-install
+configuration, not features automatically enabled by the Recovery profile.
+
 Target: HP Envy x360 15-fe0xxx, board 8BDF, BIOS F.03, Core i7-1355U
 (2 performance cores + 8 efficiency cores, 12 threads), 16 GB RAM.
 Physical GPU is 8086:A7A1 rev 04 / subsystem 103C:8BDF, 96 EUs and

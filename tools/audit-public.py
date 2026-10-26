@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import plistlib
 import re
+import stat
 import subprocess
 import zipfile
 
@@ -78,13 +79,23 @@ def main():
     if failures:
         raise SystemExit(1)
     if args.zip:
+        modes = {}
+        for entry in subprocess.check_output(['git', 'ls-files', '--stage', '-z'], cwd=ROOT).decode().split('\0'):
+            if entry:
+                metadata, name = entry.split('\t', 1)
+                modes[name] = int(metadata.split()[0], 8) & 0o777
         with zipfile.ZipFile(args.zip, 'x', compression=zipfile.ZIP_DEFLATED) as z:
             for name, data in sorted(files.items()):
-                z.writestr('hackintosh/'+name, data)
+                item = zipfile.ZipInfo('hackintosh/'+name)
+                item.create_system = 3
+                item.external_attr = (stat.S_IFREG | modes[name]) << 16
+                item.compress_type = zipfile.ZIP_DEFLATED
+                z.writestr(item, data)
         with zipfile.ZipFile(args.zip) as z:
             assert len(z.infolist()) == len(files)
             for name, data in files.items():
                 assert z.read('hackintosh/'+name) == data
+                assert (z.getinfo('hackintosh/'+name).external_attr >> 16) & 0o777 == modes[name]
         print('Verified every exported file. ZIP SHA-256:', hashlib.sha256(args.zip.read_bytes()).hexdigest())
 
 if __name__ == '__main__':

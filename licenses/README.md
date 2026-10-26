@@ -29,6 +29,8 @@ holders before acceptance. See [SUPPORT.md](../docs/SUPPORT.md).
 | HookCase dependency | Steven Michaud and upstream modifications; MIT in the pinned dependency's `src/LICENSE-HookCase`. |
 | MacKernelSDK / Lilu / OpenCore / Voodoo components | Their respective authors and original terms; retrieved as dependencies or referenced, not relicensed here. |
 | CPU unlock, battery bridge, project-specific packaging/docs | Original project work, except any retained third-party notices; MIT under the scope in the root LICENSE. |
+| Installer Voodoo metadata | GPL-2.0, with license copies under tools/installer/templates; pinned upstream implementation sources are downloaded for local builds. |
+| Installer SSDT-PLUG-ALT-HP12 | Derived from OpenCorePkg 1.0.8; BSD license retained under tools/installer/acpi. |
 
 Pinned upstream revisions are recorded in [BUILD.md](../docs/BUILD.md). Source
 overlays and build recipes are included so modifications can be inspected;

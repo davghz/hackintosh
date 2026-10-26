@@ -11,6 +11,9 @@ This grant does NOT relicense third-party or derivative components:
 - drivers/wifi/ retains its GPL-2.0 terms and embedded upstream notices;
   Intel firmware has its separate license.
 - Downloaded dependencies retain their own licenses.
+- tools/installer/templates/Voodoo*.plist retain the Voodoo projects' GPL-2.0
+  terms (license copies beside them); tools/installer/acpi/SSDT-PLUG-ALT-HP12.dsl
+  retains the accompanying OpenCore BSD terms. These are not relicensed MIT.
 
 See licenses/README.md for the component map and attribution.
 

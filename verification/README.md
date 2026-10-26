@@ -7,8 +7,13 @@ not requalify the laptop's drivers or establish a sleep fix.
   They are historical snapshots: later documentation, license and publication
   scope changes supersede individual observations such as no configured remote
   or a pending original-code license.
-- `publication-audit.json` records the final pre-upload audit and source digest.
+- `publication-audit.json` records the initial source release's pre-upload audit and source digest.
   It supersedes the earlier export's firmware inclusion and stale comments.
+- `installer-preview.json` records the later Recovery builder checks: complete
+  assembly, a fresh network download, a clean source export, 17 tests and a
+  temporary FAT32 disk-image copy/readback. Hardware inputs used the original
+  HP's recorded evidence; no new Linux collector run, physical boot or clean
+  installation is claimed. The user has no spare USB for that next test.
 - Fresh builds use a separate source-only directory with dependencies fetched
   from the pinned public repositories, without the original development cache.
   Three macOS kext builds and ad-hoc signature checks are distinct from hardware
