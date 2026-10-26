@@ -3,7 +3,7 @@
 HP adaptation of the pinned NootedGreen/Iris Xe stack for physical A7A1 rev 04,
 subsystem 103C:8BDF, 96 EUs, 60 MiB stolen memory and macOS build 25G241.
 The original laptop passed bounded GPU compute/render checks and the user
-confirmed the cursor repair. Full system sleep remains unresolved.
+confirmed the fix. Full system sleep remains unresolved.
 
 - `overlay/`: source copied over the pinned upstream directory, including HP
   qualification and patch helpers. Unchanged firmware payload files are omitted.
